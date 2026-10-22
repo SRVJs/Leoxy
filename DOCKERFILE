@@ -1,23 +1,19 @@
-FROM golang:1.26-alpine AS builder
+FROM golang:1.26.2 AS build
 
-WORKDIR /app
+WORKDIR /src
 
 COPY go.mod go.sum ./
+
 RUN go mod download
 
 COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /leoxy ./app/cli
 
-FROM alpine:3.21
-
-RUN apk --no-cache add ca-certificates
-
 WORKDIR /app
 
-COPY --from=builder /leoxy /app/bin/leoxy
-COPY example/config.yaml /app/leoxy/config.yaml
+COPY --from=build /leoxy /usr/local/bin/leoxy
 
 EXPOSE 8080
 
-CMD ["/app/bin/leoxy"]
+ENTRYPOINT ["leoxy"]

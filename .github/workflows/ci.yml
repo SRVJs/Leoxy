@@ -2,7 +2,14 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
+      - dev
+
   pull_request:
+    branches:
+      - main
+      - dev
 
 permissions:
   contents: read
@@ -27,8 +34,8 @@ jobs:
       - name: Test
         run: go test ./...
   build:
-    needs: test
     runs-on: ubuntu-latest
+    needs: test
 
     steps:
       - name: Checkout

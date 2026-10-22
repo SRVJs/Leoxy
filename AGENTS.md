@@ -35,7 +35,7 @@ Global rule:
 
 - Ask the user first before making any code change.
 - Show the intended change for review when possible.
-- Wait for the user to accept or reject the change before editing project code.
+- Wait for the user to accept or reject the change before editing project code, never change code else take premition from me.
 - Always keep the changes in the code to be as simple as possible, straight to the point, with no comments added
 
 ### Allow

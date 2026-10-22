@@ -1,0 +1,49 @@
+name: Notify Discord
+
+on:
+  push:
+    branches:
+      - "**"
+
+permissions:
+  contents: read
+
+env:
+  PROJECT_NAME: ${{ vars.PROJECT_NAME || github.event.repository.name }}
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord Notification
+        env:
+          ACTOR_NAME: ${{ github.actor }}
+          BRANCH_NAME: ${{ github.ref_name }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          if [ "$BRANCH_NAME" = "live" ]; then
+            JOB_SUMMARY="Check build: Done
+          Docker Hub build/push: Done
+          EC2 production deploy: Done
+          AWS/ECS deploy: Done
+          S3 backup: Done"
+          else
+            JOB_SUMMARY="Check build: Done
+          EC2 PBE deploy: Done
+          Development Docker build check: Done"
+          fi
+
+          payload=$(jq -n \
+            --arg avatar_url "https://github.com/$ACTOR_NAME.png" \
+            --arg username "$ACTOR_NAME" \
+            --arg content "$JOB_SUMMARY
+          Server: **$PROJECT_NAME Server**
+          Branch: **$BRANCH_NAME**
+          Commit: **$COMMIT_MESSAGE**" \
+            '{avatar_url: $avatar_url, username: $username, content: $content}')
+
+          curl --fail-with-body \
+            -H "Content-Type: application/json" \
+            -X POST \
+            -d "$payload" \
+            "${{ secrets.DISCORD_WEBHOOK_LEOXY }}"
