@@ -41,7 +41,9 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: .
+          file: ./DOCKERFILE
           push: ${{ steps.check-dockerhub.outputs.push }}
+          load: ${{ steps.check-dockerhub.outputs.push != 'true' }}
           tags: |
             ${{ steps.check-dockerhub.outputs.push == 'true' && format('{0}/{1}:latest', env.DOCKER_USERNAME, env.PROJECT_NAME) || format('{0}:local', env.PROJECT_NAME) }}
             ${{ steps.check-dockerhub.outputs.push == 'true' && format('{0}/{1}:{2}', env.DOCKER_USERNAME, env.PROJECT_NAME, github.sha) || format('{0}:{1}', env.PROJECT_NAME, github.sha) }}
