@@ -26,10 +26,16 @@ var startCmd = &cobra.Command{
 	Example: "  leoxy start",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		once.Do(func() {
-			if err := os.MkdirAll(pidKeys, 0755); err != nil {
+			if err := os.MkdirAll(pidKeys, 0700); err != nil {
 				log.Fatal(err)
 			}
-			if err := os.MkdirAll(pidLogs, 0755); err != nil {
+			if err := os.Chmod(pidKeys, 0700); err != nil {
+				log.Fatal(err)
+			}
+			if err := os.MkdirAll(pidLogs, 0700); err != nil {
+				log.Fatal(err)
+			}
+			if err := os.Chmod(pidLogs, 0700); err != nil {
 				log.Fatal(err)
 			}
 		})
@@ -41,11 +47,14 @@ var startCmd = &cobra.Command{
 
 		process := exec.Command(executable, "run")
 
-		logFile, err := os.OpenFile("leoxy/log/leoxy.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+		logFile, err := os.OpenFile("leoxy/log/leoxy.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
 		if err != nil {
 			return err
 		}
 		defer logFile.Close()
+		if err := logFile.Chmod(0600); err != nil {
+			return err
+		}
 
 		process.Stdout = logFile
 		process.Stderr = logFile
@@ -56,6 +65,11 @@ var startCmd = &cobra.Command{
 
 		if err := os.WriteFile(pidFile, []byte(strconv.Itoa(process.Process.Pid)), 0644); err != nil {
 			_ = process.Process.Kill()
+			return err
+		}
+		if err := os.Chmod(pidFile, 0600); err != nil {
+			_ = process.Process.Kill()
+			_ = os.Remove(pidFile)
 			return err
 		}
 

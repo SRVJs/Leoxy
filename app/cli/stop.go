@@ -26,6 +26,9 @@ var stopCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("invalid PID file")
 		}
+		if pid <= 1 || pid == os.Getpid() {
+			return fmt.Errorf("invalid PID file")
+		}
 
 		if runtime.GOOS == "windows" {
 			err = exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F").Run()

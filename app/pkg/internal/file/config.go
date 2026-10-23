@@ -22,16 +22,22 @@ upstream:
 `
 
 func CreateConfig() error {
-	if err := os.MkdirAll("leoxy", 0755); err != nil {
+	if err := os.MkdirAll("leoxy", 0700); err != nil {
+		return err
+	}
+	if err := os.Chmod("leoxy", 0700); err != nil {
 		return err
 	}
 
 	configPath := "leoxy/config.yaml"
 	if _, err := os.Stat(configPath); err == nil {
-		return nil
+		return os.Chmod(configPath, 0600)
 	} else if !os.IsNotExist(err) {
 		return err
 	}
 
-	return os.WriteFile(configPath, []byte(defaultConfig), 0644)
+	if err := os.WriteFile(configPath, []byte(defaultConfig), 0600); err != nil {
+		return err
+	}
+	return os.Chmod(configPath, 0600)
 }
