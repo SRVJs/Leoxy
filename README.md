@@ -30,8 +30,8 @@ When Nginx forwards traffic, ensure LX-2 receives client-IP headers only from th
 Pull and run a published version from Docker Hub:
 
 ```bash
-docker pull elrefai99/leoxy:3.8.0
-docker run --rm -p 8080:8080 -v "${PWD}/leoxy:/app/leoxy" elrefai99/leoxy:latest
+docker pull mohamed0699/leoxy:3.8.0
+docker run --rm -p 8080:8080 -v "${PWD}/leoxy:/app/leoxy" mohamed0699/leoxy:latest
 ```
 
 The container reads `leoxy/config.yaml`. On first start it creates a default config in the mounted `./leoxy` directory. Edit its upstream URLs so they are reachable from the container. For a backend in the same Compose project, use the backend service name as the hostname instead of `localhost`.
@@ -41,7 +41,7 @@ Example `compose.yaml`:
 ```yaml
 services:
   leoxy:
-    image: elrefai99/leoxy:latest
+    image: mohamed0699/leoxy:latest
     ports:
       - "8080:8080"
     volumes:

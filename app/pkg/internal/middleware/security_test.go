@@ -50,6 +50,29 @@ func TestAccessControlIgnoresForgedClientIPHeaders(t *testing.T) {
 	}
 }
 
+func TestAccessControlPathMatching(t *testing.T) {
+	handler, err := AccessControl(nil, nil, nil, []string{"/admin"}, nil, "", false, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, test := range []struct {
+		path   string
+		status int
+	}{
+		{"/admin", http.StatusOK},
+		{"/administrator", http.StatusNotFound},
+	} {
+		t.Run(test.path, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, test.path, nil))
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+		})
+	}
+}
+
 func TestAccessControlUsesTrustedProxyForwarding(t *testing.T) {
 	handler, err := AccessControl([]string{"10.0.0.0/8"}, nil, nil, nil, nil, "", false, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusOK) }), "192.0.2.0/24")
 	if err != nil {

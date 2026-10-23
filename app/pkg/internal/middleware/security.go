@@ -97,7 +97,7 @@ func set(values []string) map[string]bool {
 }
 func matchesPath(value string, patterns []string) bool {
 	for _, pattern := range patterns {
-		if matched, _ := path.Match(pattern, value); matched || strings.HasPrefix(value, strings.TrimSuffix(pattern, "*")) {
+		if matched, _ := path.Match(pattern, value); matched {
 			return true
 		}
 	}
