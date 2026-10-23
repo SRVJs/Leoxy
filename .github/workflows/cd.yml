@@ -4,7 +4,7 @@ on:
   workflow_call:
 
 env:
-  PROJECT_NAME: ${{ vars.PROJECT_NAME || github.event.repository.name }}
+  PROJECT_NAME: "leoxy"
   DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME || secrets.DOKCER_USERNAME }}
   DOCKER_ACCESS_TOKEN: ${{ secrets.DOCKER_ACCESS_TOKEN }}
 

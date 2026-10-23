@@ -1,6 +1,9 @@
+# =============== #
+# Stage 1: Build  #
+# =============== #
 FROM golang:1.26.2 AS build
 
-WORKDIR /src
+WORKDIR /app
 
 COPY go.mod go.sum ./
 
@@ -9,6 +12,11 @@ RUN go mod download
 COPY . .
 
 RUN CGO_ENABLED=0 GOOS=linux go build -o /leoxy ./app/cli
+
+# =================== #
+# Stage 2: Production #
+# =================== #
+FROM golang:1.26.2
 
 WORKDIR /app
 

@@ -3,13 +3,11 @@ name: CI
 on:
   push:
     branches:
-      - main
-      - dev
+      - "**"
 
   pull_request:
     branches:
-      - main
-      - dev
+      - "**"
 
 permissions:
   contents: read
@@ -54,5 +52,6 @@ jobs:
         run: go build ./...
 
   docker:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
     uses: ./.github/workflows/cd.yml
