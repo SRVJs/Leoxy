@@ -2,7 +2,12 @@ name: CI
 
 on:
   push:
+    branches:
+      - "**"
+
   pull_request:
+    branches:
+      - "**"
 
 permissions:
   contents: read
@@ -27,8 +32,8 @@ jobs:
       - name: Test
         run: go test ./...
   build:
-    needs: test
     runs-on: ubuntu-latest
+    needs: test
 
     steps:
       - name: Checkout
@@ -45,3 +50,8 @@ jobs:
 
       - name: Build
         run: go build ./...
+
+  docker:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: build
+    uses: ./.github/workflows/cd.yml

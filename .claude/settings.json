@@ -1,0 +1,31 @@
+{
+     "permissions": {
+          "allow": [
+               "Bash(pnpm lint*)",
+               "Bash(pnpm build*)",
+               "Bash(pnpm test*)",
+               "Bash(pnpm gen:imports*)",
+               "Bash(pnpm install*)",
+               "Bash(pnpm taze*)",
+               "Bash(git status*)",
+               "Bash(git diff*)",
+               "Bash(git log*)",
+               "Bash(git branch*)",
+               "Bash(git stash*)",
+               "Bash(git add src/*)"
+          ],
+          "deny": [
+               "Read(**/.env*)",
+               "Edit(**/.env*)",
+               "Write(**/.env*)",
+               "Bash(cat */.env*)",
+               "Bash(git push --force*)",
+               "Bash(git push -f*)",
+               "Bash(git reset --hard*)",
+               "Bash(git clean -f*)",
+               "Bash(rm -rf*)",
+               "Bash(git push origin main*)",
+               "Bash(git push origin master*)"
+          ]
+     }
+}

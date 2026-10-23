@@ -1,38 +1,50 @@
-name: Release
+name: Auto Release from Package Version
 
 on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Read version
+      - name: Read package version
         id: version
+        shell: bash
         run: |
-          version=$(sed -nE 's/^[[:space:]]*const version = "([^"]+)"[[:space:]]*$/\1/p' app/cli/main.go)
-          if [ -z "$version" ]; then
-            echo "Could not read version from app/cli/main.go" >&2
-            exit 1
+          VERSION="$(node -p "require('./version.json').version")"
+          TAG="v${VERSION}"
+
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "${TAG} already exists; no release is needed."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "Creating release ${TAG}."
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          if gh release view "$VERSION" >/dev/null 2>&1; then
-            echo "Release $VERSION already exists"
-            exit 0
-          fi
-          gh release create "$VERSION" --target "$GITHUB_SHA" --generate-notes
+        if: steps.version.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          generate_release_notes: true
