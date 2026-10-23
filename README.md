@@ -24,6 +24,41 @@ LX-2 supports per-IP, per-route, and global rate limits. Configure them under `s
 
 When Nginx forwards traffic, ensure LX-2 receives client-IP headers only from that trusted Nginx instance. Do not allow clients to connect directly to LX-2 and submit forwarded-IP headers.
 
+
+## Uses
+
+Pull and run a published version from Docker Hub:
+
+```bash
+docker pull elrefai99/leoxy:3.8.0
+docker run --rm -p 8080:8080 -v "${PWD}/leoxy:/app/leoxy" elrefai99/leoxy:latest
+```
+
+The container reads `leoxy/config.yaml`. On first start it creates a default config in the mounted `./leoxy` directory. Edit its upstream URLs so they are reachable from the container. For a backend in the same Compose project, use the backend service name as the hostname instead of `localhost`.
+
+Example `compose.yaml`:
+
+```yaml
+services:
+  leoxy:
+    image: elrefai99/leoxy:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./leoxy:/app/leoxy
+    restart: unless-stopped
+```
+
+Start the service and view its logs with:
+
+```bash
+docker compose up -d
+docker compose logs -f leoxy
+```
+
+Change the image tag to `latest` to follow the latest published build. The version tag is read from `version.json` during the Docker workflow.
+
+
 ## Features
 
 - **Reverse proxy** – forwards requests to multiple backend services using `httputil.ReverseProxy`.
