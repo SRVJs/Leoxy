@@ -52,3 +52,7 @@ jobs:
 
       - name: Build
         run: go build ./...
+
+  docker:
+    needs: build
+    uses: ./.github/workflows/cd.yml
