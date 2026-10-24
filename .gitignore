@@ -1,13 +1,20 @@
 # Logs
 *.log
 
+# Folders
 .DS_Store
 dist
+.claude
+.cursor/
+.opencode
+.gemini
 .gocache
 coverage
 *.local
-roadmap.md
 
+# ai files
+GEMINI.md
+roadmap.md
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
