@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/elrefai99/Leoxy/app/pkg/internal/common"
 	"github.com/elrefai99/Leoxy/app/pkg/internal/file"
 	http_server "github.com/elrefai99/Leoxy/app/pkg/internal/http_server"
-	"github.com/elrefai99/Leoxy/app/pkg/internal/server"
-	"github.com/elrefai99/Leoxy/app/pkg/internal/utils"
+	securitymiddleware "github.com/elrefai99/Leoxy/app/pkg/internal/security"
 )
 
 var once sync.Once
@@ -32,20 +32,20 @@ func Run() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	trustedProxyCIDRs, err := utils.ParseCIDRs(cfg.Server.Security.TrustedProxyCIDRs)
+	trustedProxyCIDRs, err := common.ParseCIDRs(cfg.Server.Security.TrustedProxyCIDRs)
 	if err != nil {
 		log.Fatalf("invalid trusted proxy CIDR: %v", err)
 	}
 
 	// Proxy routers
 	mux := http.NewServeMux()
-	mux.HandleFunc("/ping", server.Ping)
-	mux.HandleFunc("/health/live", server.HealthProxy)
+	mux.HandleFunc("/ping", http_server.Ping)
+	mux.HandleFunc("/health/live", http_server.HealthProxy)
 	mux.HandleFunc("/leoxy", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "docs/index.html")
 	})
 
-	metrics := utils.NewMetrics()
+	metrics := common.NewMetrics()
 	mux.Handle("/metrics", http.HandlerFunc(metrics.Handler))
 
 	shutdown := make(chan os.Signal, 1)
@@ -73,7 +73,7 @@ func Run() {
 				streamListeners = append(streamListeners, listener)
 				go func(name, target string, listener net.Listener) {
 					log.Printf("TCP proxy %q listening on %s -> %s", name, listener.Addr(), target)
-					if err := server.RunTCPProxy(listener, target, done); err != nil {
+					if err := http_server.RunTCPProxy(listener, target, done); err != nil {
 						log.Printf("TCP proxy %q stopped: %v", name, err)
 					}
 				}(resource.Name, targetAddr, listener)
@@ -91,7 +91,7 @@ func Run() {
 				udpListeners = append(udpListeners, conn)
 				go func(name, target string, conn *net.UDPConn) {
 					log.Printf("UDP proxy %q listening on %s -> %s", name, conn.LocalAddr(), target)
-					if err := server.RunUDPProxy(conn, target, done); err != nil {
+					if err := http_server.RunUDPProxy(conn, target, done); err != nil {
 						log.Printf("UDP proxy %q stopped: %v", name, err)
 					}
 				}(resource.Name, targetAddr, conn)
@@ -108,7 +108,7 @@ func Run() {
 		}
 		targets := make([]*url.URL, 0, len(serverURLs))
 		for _, serverURL := range serverURLs {
-			target, err := server.ParseHTTPUpstreamURL(serverURL)
+			target, err := http_server.ParseHTTPUpstreamURL(serverURL)
 			if err != nil {
 				log.Printf("invalid upstream %q: %v", serverURL, err)
 				continue
@@ -140,7 +140,7 @@ func Run() {
 		trustedProxyCIDRsForRoute := trustedProxyCIDRs
 		if len(security.TrustedProxyCIDRs) > 0 {
 			trustedProxyCIDRValues = security.TrustedProxyCIDRs
-			trustedProxyCIDRsForRoute, err = utils.ParseCIDRs(trustedProxyCIDRValues)
+			trustedProxyCIDRsForRoute, err = common.ParseCIDRs(trustedProxyCIDRValues)
 			if err != nil {
 				log.Fatalf("invalid trusted proxy CIDR for %q: %v", resource.Name, err)
 			}
@@ -148,14 +148,14 @@ func Run() {
 
 		var handler http.Handler
 		if len(targets) == 1 {
-			handler = server.ProxyHandler(prefix, server.NewProxy(targets[0], resource.IP, trustedProxyCIDRsForRoute))
+			handler = http_server.ProxyHandler(prefix, http_server.NewProxy(targets[0], resource.IP, trustedProxyCIDRsForRoute))
 		} else {
-			handler = server.LoadBalancedProxyHandler(prefix, targets, resource.IP, trustedProxyCIDRsForRoute)
+			handler = http_server.LoadBalancedProxyHandler(prefix, targets, resource.IP, trustedProxyCIDRsForRoute)
 		}
 		if security.MaxBody <= 0 {
 			security.MaxBody = resource.Body
 		}
-		secured, err := http_server.AccessControlWithJWT(
+		secured, err := securitymiddleware.AccessControlWithJWT(
 			security.AllowCIDRs,
 			security.DenyCIDRs,
 			security.AllowedMethods,
@@ -172,7 +172,7 @@ func Run() {
 			log.Fatalf("invalid security configuration for %q: %v", resource.Name, err)
 		}
 		handler = secured
-		handler = http_server.RateLimit(
+		handler = securitymiddleware.RateLimit(
 			security.RateLimit,
 			security.RateLimitBurst,
 			security.RouteRateLimit,
@@ -184,7 +184,7 @@ func Run() {
 			trustedProxyCIDRsForRoute,
 		)
 		if security.MaxBody > 0 {
-			handler = http_server.Body(security.MaxBody, handler)
+			handler = securitymiddleware.Body(security.MaxBody, handler)
 		}
 
 		if prefix == "/" {
@@ -194,9 +194,9 @@ func Run() {
 			mux.Handle(prefix+"/", handler)
 		}
 	}
-	mux.HandleFunc("/health/ready", server.Readiness(healthTargets))
+	mux.HandleFunc("/health/ready", http_server.Readiness(healthTargets))
 
-	globalHandler, err := http_server.AccessControlWithJWT(
+	globalHandler, err := securitymiddleware.AccessControlWithJWT(
 		cfg.Server.Security.AllowCIDRs,
 		cfg.Server.Security.DenyCIDRs,
 		cfg.Server.Security.AllowedMethods,
@@ -212,7 +212,7 @@ func Run() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	globalHandler = http_server.RateLimit(
+	globalHandler = securitymiddleware.RateLimit(
 		cfg.Server.Security.RateLimit,
 		cfg.Server.Security.RateLimitBurst,
 		0,
@@ -223,7 +223,7 @@ func Run() {
 		globalHandler,
 		trustedProxyCIDRs,
 	)
-	globalHandler = http_server.RedisRateLimit(
+	globalHandler = securitymiddleware.RedisRateLimit(
 		cfg.Server.Security.RedisAddr,
 		cfg.Server.Security.RedisPassword,
 		cfg.Server.Security.RedisDB,
@@ -232,12 +232,12 @@ func Run() {
 		globalHandler,
 	)
 	if cfg.Server.Security.MaxBody > 0 {
-		globalHandler = http_server.Body(cfg.Server.Security.MaxBody, globalHandler)
+		globalHandler = securitymiddleware.Body(cfg.Server.Security.MaxBody, globalHandler)
 	}
 
 	httpServer := &http.Server{
 		Addr:              cfg.Server.Port,
-		Handler:           utils.RequestLogger(metrics.Middleware(globalHandler)),
+		Handler:           common.RequestLogger(metrics.Middleware(globalHandler)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       60 * time.Second,

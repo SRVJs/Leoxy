@@ -1,4 +1,4 @@
-package server
+package http_server
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/elrefai99/Leoxy/app/pkg/internal/utils"
+	"github.com/elrefai99/Leoxy/app/pkg/internal/common"
 )
 
 var proxyTransport = &http.Transport{
@@ -38,7 +38,7 @@ func NewProxy(target *url.URL, forwardIP bool, trustedProxyCIDRs ...[]*net.IPNet
 	proxy.Director = func(r *http.Request) {
 		clientIP := r.RemoteAddr
 		if len(trustedProxyCIDRs) > 0 {
-			clientIP = utils.GetClientIP(r, trustedProxyCIDRs[0])
+			clientIP = common.GetClientIP(r, trustedProxyCIDRs[0])
 		}
 		if host, _, err := net.SplitHostPort(clientIP); err == nil {
 			clientIP = host
@@ -117,7 +117,7 @@ func NewLoadBalancedProxy(targets []*url.URL, forwardIP bool, trustedProxyCIDRs 
 		target := targets[int(atomic.AddUint64(&next, 1)-1)%len(targets)]
 		clientIP := r.RemoteAddr
 		if len(trustedProxyCIDRs) > 0 {
-			clientIP = utils.GetClientIP(r, trustedProxyCIDRs[0])
+			clientIP = common.GetClientIP(r, trustedProxyCIDRs[0])
 		}
 		if host, _, err := net.SplitHostPort(clientIP); err == nil {
 			clientIP = host
