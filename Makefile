@@ -1,5 +1,5 @@
-GOOS ?= $(shell go env GOOS)
-GOARCH ?= $(shell go env GOARCH)
+GOOS ?= $(shell go env GOOS) # Operating system
+GOARCH ?= $(shell go env GOARCH) # CPU Arch
 DIST ?= dist
 
 EXT :=
