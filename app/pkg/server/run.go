@@ -13,9 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/elrefai99/Leoxy/app/pkg/internal/config"
 	"github.com/elrefai99/Leoxy/app/pkg/internal/file"
-	"github.com/elrefai99/Leoxy/app/pkg/internal/middleware"
+	http_server "github.com/elrefai99/Leoxy/app/pkg/internal/http_server"
 	"github.com/elrefai99/Leoxy/app/pkg/internal/server"
 	"github.com/elrefai99/Leoxy/app/pkg/internal/utils"
 )
@@ -29,7 +28,7 @@ func Run() {
 		}
 	})
 
-	cfg, err := config.Load()
+	cfg, err := file.Load()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -156,7 +155,7 @@ func Run() {
 		if security.MaxBody <= 0 {
 			security.MaxBody = resource.Body
 		}
-		secured, err := middleware.AccessControlWithJWT(
+		secured, err := http_server.AccessControlWithJWT(
 			security.AllowCIDRs,
 			security.DenyCIDRs,
 			security.AllowedMethods,
@@ -173,7 +172,7 @@ func Run() {
 			log.Fatalf("invalid security configuration for %q: %v", resource.Name, err)
 		}
 		handler = secured
-		handler = middleware.RateLimit(
+		handler = http_server.RateLimit(
 			security.RateLimit,
 			security.RateLimitBurst,
 			security.RouteRateLimit,
@@ -185,7 +184,7 @@ func Run() {
 			trustedProxyCIDRsForRoute,
 		)
 		if security.MaxBody > 0 {
-			handler = middleware.Body(security.MaxBody, handler)
+			handler = http_server.Body(security.MaxBody, handler)
 		}
 
 		if prefix == "/" {
@@ -197,7 +196,7 @@ func Run() {
 	}
 	mux.HandleFunc("/health/ready", server.Readiness(healthTargets))
 
-	globalHandler, err := middleware.AccessControlWithJWT(
+	globalHandler, err := http_server.AccessControlWithJWT(
 		cfg.Server.Security.AllowCIDRs,
 		cfg.Server.Security.DenyCIDRs,
 		cfg.Server.Security.AllowedMethods,
@@ -213,7 +212,7 @@ func Run() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	globalHandler = middleware.RateLimit(
+	globalHandler = http_server.RateLimit(
 		cfg.Server.Security.RateLimit,
 		cfg.Server.Security.RateLimitBurst,
 		0,
@@ -224,7 +223,7 @@ func Run() {
 		globalHandler,
 		trustedProxyCIDRs,
 	)
-	globalHandler = middleware.RedisRateLimit(
+	globalHandler = http_server.RedisRateLimit(
 		cfg.Server.Security.RedisAddr,
 		cfg.Server.Security.RedisPassword,
 		cfg.Server.Security.RedisDB,
@@ -233,7 +232,7 @@ func Run() {
 		globalHandler,
 	)
 	if cfg.Server.Security.MaxBody > 0 {
-		globalHandler = middleware.Body(cfg.Server.Security.MaxBody, globalHandler)
+		globalHandler = http_server.Body(cfg.Server.Security.MaxBody, globalHandler)
 	}
 
 	httpServer := &http.Server{
