@@ -15,9 +15,10 @@ import (
 
 	"github.com/elrefai99/Leoxy/app/pkg/internal/common"
 	"github.com/elrefai99/Leoxy/app/pkg/internal/file"
-	http_server "github.com/elrefai99/Leoxy/app/pkg/internal/http_server"
+	health "github.com/elrefai99/Leoxy/app/pkg/internal/http_server/Health"
 	tcp "github.com/elrefai99/Leoxy/app/pkg/internal/http_server/TCP"
 	udp "github.com/elrefai99/Leoxy/app/pkg/internal/http_server/UDP"
+	"github.com/elrefai99/Leoxy/app/pkg/internal/http_server/proxy"
 	securitymiddleware "github.com/elrefai99/Leoxy/app/pkg/internal/security"
 )
 
@@ -41,8 +42,8 @@ func Run() {
 
 	// Proxy routers
 	mux := http.NewServeMux()
-	mux.HandleFunc("/ping", http_server.Ping)
-	mux.HandleFunc("/health/live", http_server.HealthProxy)
+	mux.HandleFunc("/ping", health.Ping)
+	mux.HandleFunc("/health/live", health.HealthProxy)
 	mux.HandleFunc("/leoxy", func(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, "docs/index.html")
 	})
@@ -110,7 +111,7 @@ func Run() {
 		}
 		targets := make([]*url.URL, 0, len(serverURLs))
 		for _, serverURL := range serverURLs {
-			target, err := http_server.ParseHTTPUpstreamURL(serverURL)
+			target, err := proxy.ParseHTTPUpstreamURL(serverURL)
 			if err != nil {
 				log.Printf("invalid upstream %q: %v", serverURL, err)
 				continue
@@ -150,9 +151,9 @@ func Run() {
 
 		var handler http.Handler
 		if len(targets) == 1 {
-			handler = http_server.ProxyHandler(prefix, http_server.NewProxy(targets[0], resource.IP, trustedProxyCIDRsForRoute))
+			handler = proxy.ProxyHandler(prefix, proxy.NewProxy(targets[0], resource.IP, trustedProxyCIDRsForRoute))
 		} else {
-			handler = http_server.LoadBalancedProxyHandler(prefix, targets, resource.IP, trustedProxyCIDRsForRoute)
+			handler = proxy.LoadBalancedProxyHandler(prefix, targets, resource.IP, trustedProxyCIDRsForRoute)
 		}
 		if security.MaxBody <= 0 {
 			security.MaxBody = resource.Body
@@ -196,7 +197,7 @@ func Run() {
 			mux.Handle(prefix+"/", handler)
 		}
 	}
-	mux.HandleFunc("/health/ready", http_server.Readiness(healthTargets))
+	mux.HandleFunc("/health/ready", health.Readiness(healthTargets))
 
 	globalHandler, err := securitymiddleware.AccessControlWithJWT(
 		cfg.Server.Security.AllowCIDRs,
