@@ -11,6 +11,7 @@ dist
 .gocache
 coverage
 *.local
+baseline/
 
 # ai files
 GEMINI.md
