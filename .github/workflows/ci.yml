@@ -72,5 +72,5 @@ jobs:
   docker:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: build
-    uses: ./.github/workflows/cd.yml
+    uses: ./.github/workflows/docker.yml
     secrets: inherit
