@@ -79,12 +79,13 @@ func requestScheme(r *http.Request) string {
 
 func ProxyHandler(prefix string, proxy *httputil.ReverseProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if prefix != "/" {
+		if prefix == "/" {
 			r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
 			if r.URL.Path == "" {
 				r.URL.Path = "/"
 			}
 		}
+
 		proxy.ServeHTTP(w, r)
 	}
 }
@@ -92,7 +93,7 @@ func ProxyHandler(prefix string, proxy *httputil.ReverseProxy) http.HandlerFunc 
 func LoadBalancedProxyHandler(prefix string, targets []*url.URL, forwardIP bool, trustedProxyCIDRs ...[]*net.IPNet) http.HandlerFunc {
 	proxy := NewLoadBalancedProxy(targets, forwardIP, trustedProxyCIDRs...)
 	return func(w http.ResponseWriter, r *http.Request) {
-		if prefix != "/" {
+		if prefix == "/" {
 			r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
 			if r.URL.Path == "" {
 				r.URL.Path = "/"
