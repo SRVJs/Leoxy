@@ -16,6 +16,8 @@ import (
 	"github.com/elrefai99/Leoxy/app/pkg/internal/common"
 	"github.com/elrefai99/Leoxy/app/pkg/internal/file"
 	http_server "github.com/elrefai99/Leoxy/app/pkg/internal/http_server"
+	tcp "github.com/elrefai99/Leoxy/app/pkg/internal/http_server/TCP"
+	udp "github.com/elrefai99/Leoxy/app/pkg/internal/http_server/UDP"
 	securitymiddleware "github.com/elrefai99/Leoxy/app/pkg/internal/security"
 )
 
@@ -73,7 +75,7 @@ func Run() {
 				streamListeners = append(streamListeners, listener)
 				go func(name, target string, listener net.Listener) {
 					log.Printf("TCP proxy %q listening on %s -> %s", name, listener.Addr(), target)
-					if err := http_server.RunTCPProxy(listener, target, done); err != nil {
+					if err := tcp.RunTCPProxy(listener, target, done); err != nil {
 						log.Printf("TCP proxy %q stopped: %v", name, err)
 					}
 				}(resource.Name, targetAddr, listener)
@@ -91,7 +93,7 @@ func Run() {
 				udpListeners = append(udpListeners, conn)
 				go func(name, target string, conn *net.UDPConn) {
 					log.Printf("UDP proxy %q listening on %s -> %s", name, conn.LocalAddr(), target)
-					if err := http_server.RunUDPProxy(conn, target, done); err != nil {
+					if err := udp.RunUDPProxy(conn, target, done); err != nil {
 						log.Printf("UDP proxy %q stopped: %v", name, err)
 					}
 				}(resource.Name, targetAddr, conn)
@@ -244,14 +246,14 @@ func Run() {
 		MaxHeaderBytes:    1 << 20,
 	}
 	if httpServer.Addr == "" {
-		httpServer.Addr = ":8080"
+		httpServer.Addr = ":4444"
 	} else if !strings.Contains(httpServer.Addr, ":") {
 		httpServer.Addr = ":" + httpServer.Addr
 	}
 
 	serverErrors := make(chan error, 1)
 	go func() {
-		log.Println("Leoxy Success Runner")
+		log.Printf("Leoxy proxy %q listening on [::]:%s -> 127.0.0.1:%s", "Leoxy Service", httpServer.Addr, httpServer.Addr)
 		serverErrors <- httpServer.ListenAndServe()
 	}()
 
