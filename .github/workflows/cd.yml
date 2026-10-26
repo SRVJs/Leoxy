@@ -59,7 +59,7 @@ jobs:
 
       - name: Build summary
         run: |
-          echo "# . 🦐 elrefai99 projects ."
+          echo "# . 🦐 elrefai99 projects ." >> $GITHUB_STEP_SUMMARY
           echo "## 🐳 Docker Build Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- **Status**: ✅ Build completed successfully" >> $GITHUB_STEP_SUMMARY

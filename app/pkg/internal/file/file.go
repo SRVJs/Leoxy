@@ -5,7 +5,7 @@ import "os"
 const defaultConfig = `
 # Leoxy listens on this port. PORT can override it through the environment.
 server:
-  port: "8080"
+  port: "4444"
 
 # Global security and request limits for all routes.
   security:
