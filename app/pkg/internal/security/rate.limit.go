@@ -37,7 +37,7 @@ func RateLimit(perIP, ipBurst, perRoute, routeBurst, global, globalBurst int, ro
 		mutex.Lock()
 		if now.Sub(lastCleanup) >= time.Minute {
 			for key, current := range state {
-				if now.Sub(current.updated) >= 2*time.Minute {
+				if now.Sub(current.updated) >= 1*time.Minute {
 					delete(state, key)
 				}
 			}
@@ -77,9 +77,9 @@ func RateLimit(perIP, ipBurst, perRoute, routeBurst, global, globalBurst int, ro
 				state[key] = current
 			}
 		}
-		mutex.Unlock()
+		defer mutex.Unlock()
 		if !allowed {
-			w.Header().Set("Retry-After", "1")
+			w.Header().Set("Retry-After", "60")
 			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
 			return
 		}
