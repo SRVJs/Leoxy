@@ -2,10 +2,12 @@
 set -u
 
 RESULT="baseline"
-mkdir -p "docs/$RESULT"
+mkdir -p "../docs/$RESULT"
 
 REPORT="docs/$RESULT/report.txt"
 FAILED=0
+GO_PATH="$(where.exe go 2>/dev/null | head -n 1 | tr -d '\r')"
+RG_PATH="$(where.exe rg 2>/dev/null | head -n 1 | tr -d '\r')"
 
 run_check() {
      local name="$1"
@@ -14,13 +16,11 @@ run_check() {
      echo 
      echo "==================================================="
      echo "Running: $name"
-     echo 
      echo "==================================================="
      {
           echo 
           echo "==================================================="
           echo "Running: $name"
-          echo 
           echo "==================================================="
      } >> "$REPORT"
 
@@ -37,13 +37,13 @@ run_check() {
      fi
 }
 
-if ! commend -v go >/dev/null 2>&1;
+if [ -z "$GO_PATH" ];
      then 
           echo "ERROR: go is not installed or not in path."
           exit 1
 fi
 
-if ! commend -v rg >/dev/null 2>&1;
+if [ -z "$RG_PATH" ];
      then 
           echo "ERROR: rg is not installed or not in path."
           exit 1
@@ -59,12 +59,12 @@ fi
      git status --short 2>&1 || true
 } > "$REPORT"
 
-run_check "GO test" go test ./app/..
-run_check "GO vet" go vet ./app/..
-run_check "GO detector" go test-race ./app/..
+run_check "GO test" go test ./...
+run_check "GO vet" go vet ./...
+run_check "GO detector" go test-race ./...
 
 run_check "Network listeners and servers" \
-     rg -n 'ListenAndServe |http\ .Serve| net\ .Listen|ListenPacket|ListenUDP|Accept\ (|AcceptUDP|Serve\(' .
+     rg -n '(ListenAndServe|http\.Serve|net\.Listen|ListenPacket|ListenUDP|Accept\(|AcceptUDP|Serve\()' .
 
 run_check "HTTP Proxy and handlers" \
      rg -n 'ReverseProxy|RoundTrip|Transport|ServeHTTP|http\ .Hander' .
@@ -79,7 +79,6 @@ echo
 echo "==================================================="
 echo "Baseline finished"
 echo "Report Name: $REPORT"
-echo 
 echo "==================================================="
 
 if [ "$FAILED" -ne 0]; then

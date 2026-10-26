@@ -53,13 +53,17 @@ func Run() {
 
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
+
 	defer signal.Stop(shutdown)
+
 	var streamListeners []net.Listener
 	var udpListeners []*net.UDPConn
 	var healthTargets [][]*url.URL
+
 	done := make(chan struct{})
 	for _, resource := range cfg.Upstream {
 		protocol := strings.ToLower(strings.TrimSpace(resource.Protocol))
+
 		if protocol == "tcp" || protocol == "udp" {
 			listenAddr := strings.TrimSpace(resource.Listen)
 			targetAddr := strings.TrimSpace(resource.ServerURL)
@@ -101,15 +105,23 @@ func Run() {
 			}
 			continue
 		}
-		if protocol != "" && protocol != "http" && protocol != "https" && protocol != "http2" && protocol != "graphql" && protocol != "websocket" {
+		if protocol != "" &&
+			protocol != "http" &&
+			protocol != "https" &&
+			protocol != "http2" &&
+			protocol != "graphql" && protocol != "websocket" {
 			log.Printf("unsupported protocol %q for upstream %q", protocol, resource.Name)
 			continue
 		}
+
 		serverURLs := resource.Servers
+
 		if len(serverURLs) == 0 && resource.ServerURL != "" {
 			serverURLs = []string{resource.ServerURL}
 		}
+
 		targets := make([]*url.URL, 0, len(serverURLs))
+
 		for _, serverURL := range serverURLs {
 			target, err := proxy.ParseHTTPUpstreamURL(serverURL)
 			if err != nil {
@@ -118,29 +130,35 @@ func Run() {
 			}
 			targets = append(targets, target)
 		}
+
 		if len(targets) == 0 {
 			log.Printf("upstream %q has no valid servers", resource.Name)
 			healthTargets = append(healthTargets, nil)
 			continue
 		}
+
 		healthTargets = append(healthTargets, targets)
 
 		prefix := strings.TrimSpace(resource.Path)
 		if prefix == "" {
 			prefix = "/"
 		}
+
 		if !strings.HasPrefix(prefix, "/") {
 			prefix = "/" + prefix
 		}
+
 		if prefix != "/" {
 			prefix = strings.TrimRight(prefix, "/")
 			if prefix == "" {
 				prefix = "/"
 			}
 		}
+
 		security := resource.Security
 		trustedProxyCIDRValues := cfg.Server.Security.TrustedProxyCIDRs
 		trustedProxyCIDRsForRoute := trustedProxyCIDRs
+
 		if len(security.TrustedProxyCIDRs) > 0 {
 			trustedProxyCIDRValues = security.TrustedProxyCIDRs
 			trustedProxyCIDRsForRoute, err = common.ParseCIDRs(trustedProxyCIDRValues)
@@ -150,11 +168,8 @@ func Run() {
 		}
 
 		var handler http.Handler
-		if len(targets) == 1 {
-			handler = proxy.ProxyHandler(prefix, proxy.NewProxy(targets[0], resource.IP, trustedProxyCIDRsForRoute))
-		} else {
-			handler = proxy.LoadBalancedProxyHandler(prefix, targets, resource.IP, trustedProxyCIDRsForRoute)
-		}
+		handler = proxy.LoadBalancedProxyHandler(prefix, targets, resource.IP, trustedProxyCIDRsForRoute)
+
 		if security.MaxBody <= 0 {
 			security.MaxBody = resource.Body
 		}
