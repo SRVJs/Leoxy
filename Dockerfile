@@ -19,7 +19,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 # =================== #
 # Stage 2: Production #
 # =================== #
-FROM golang:1.26.2
+FROM alpine:3.22
 
 RUN apk add --no-cache ca-certificates wget \
                && addgroup -S leoxy \

@@ -2,7 +2,7 @@ services:
   leoxy:
     build:
       context: .
-      dockerfile: DOCKERFILE
+      dockerfile: Dockerfile
 
     image: ghcr.io/mohamed0699/leoxy:latest
     restart: unless-stopped

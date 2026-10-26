@@ -1,4 +1,4 @@
-name: CD
+name: Docker
 
 on:
   workflow_call:
@@ -20,9 +20,11 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v6
         with:
           context: .
+          file: ./Dockerfile
+          push: false
           load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -45,7 +47,7 @@ jobs:
         run: docker compose -f docker-compose.yml config --quiet
 
       - name: Build Compose services
-        run: docker compose -f docker-compose.yml
+        run: docker compose -f docker-compose.yml build
 
       - name: Build Compose summary
         run: |
@@ -88,10 +90,10 @@ jobs:
           password: ${{ env.DOCKER_ACCESS_TOKEN }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./DOCKERFILE
+          file: ./Dockerfile
           push: ${{ steps.check-dockerhub.outputs.push }}
           load: ${{ steps.check-dockerhub.outputs.push != 'true' }}
           tags: |
