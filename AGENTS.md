@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-Leoxy is a Go HTTP reverse-proxy service. The executable entrypoint is in `cmd/main.go`. Runtime configuration is loaded by `internal/config/dotenv.go`; HTTP handlers and proxy behavior live in `internal/server/`; shared helpers belong in `internal/utils/`. The repository currently has no dedicated test files or asset directories. Keep new implementation code under `internal/` unless it is specifically an executable entrypoint.
+Leoxy is a Go HTTP reverse-proxy service. The executable entrypoint is in `cmd/main.go`. Runtime configuration is loaded by `internal/config/dotenv.go`; HTTP handlers and proxy behavior live in `internal/server/`; shared helpers belong in `internal/common/`. The repository currently has no dedicated test files or asset directories. Keep new implementation code under `internal/` unless it is specifically an executable entrypoint.
 
 ## Build, Test, and Development Commands
 
@@ -43,7 +43,7 @@ Global rule:
 - Read tracked project files needed for the task.
 - Read source code under `src/`, configuration under `config/`, and docs such as `README.md`, `CLAUDE.md`, and this file.
 - Create new source or documentation files when they are required for the requested change.
-- Edit application code, route files, models, middleware, utilities, tests, and markdown documentation.
+- Edit application code, route files, models, security, utilities, tests, and markdown documentation.
 - Update `package.json` when the task explicitly requires script or dependency changes.
 - Run safe repo-local commands such as `rg`, `ls`, `sed`, `git status`, `pnpm lint`, and `pnpm test`.
 

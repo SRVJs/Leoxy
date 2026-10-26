@@ -31,7 +31,7 @@ Pull and run a published version from Docker Hub:
 
 ```bash
 docker pull mohamed0699/leoxy:3.8.0
-docker run --rm -p 8080:8080 -v "${PWD}/leoxy:/app/leoxy" mohamed0699/leoxy:latest
+docker run --rm -p 4444:4444 -v "${PWD}/leoxy:/app/leoxy" mohamed0699/leoxy:latest
 ```
 
 The container reads `leoxy/config.yaml`. On first start it creates a default config in the mounted `./leoxy` directory. Edit its upstream URLs so they are reachable from the container. For a backend in the same Compose project, use the backend service name as the hostname instead of `localhost`.
@@ -43,7 +43,7 @@ services:
   leoxy:
     image: mohamed0699/leoxy:latest
     ports:
-      - "8080:8080"
+      - "4444:4444"
     volumes:
       - ./leoxy:/app/leoxy
     restart: unless-stopped
@@ -78,7 +78,7 @@ Create `leoxy/config.yaml`:
 
 ```yaml
 server:
-  port: "8081"
+  port: "4444"
 
 upstream:
   - name: "GameTCP"
@@ -105,7 +105,7 @@ upstream:
 
 | Key | Description |
 |-----|-------------|
-| `server.port` | Listen address (defaults to `:8080`; a bare number gets `:` prepended). |
+| `server.port` | Listen address (defaults to `:4444`; a bare number gets `:` prepended). |
 | `upstream[].name` | Identifier for the upstream. |
 | `upstream[].path` | Route prefix that triggers this upstream (defaults to `/`). |
 | `upstream[].server_url` | Absolute URL of the backend; validated at startup. |
@@ -149,14 +149,14 @@ See the [CLI guide](docs/cli.md) for build instructions, command usage, help fla
 
 ## PM2
 
-Build the binary and start two Leoxy instances on ports 8080 and 8081:
+Build the binary and start two Leoxy instances on ports 4444:
 
 ```bash
 go build -o leoxy ./app/cli
 pm2 start ecosystem.config.cjs
 ```
 
-PM2 must use `fork` mode because Leoxy is a Go server. Put Nginx or another load balancer in front of ports 8080 and 8081. The `PORT` environment variable overrides `server.port` for each instance.
+PM2 must use `fork` mode because Leoxy is a Go server. Put Nginx or another load balancer in front of ports 4444. The `PORT` environment variable overrides `server.port` for each instance.
 
 On Windows, build `leoxy.exe` and change the ecosystem `script` value to `./leoxy.exe`.
 

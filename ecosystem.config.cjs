@@ -8,7 +8,7 @@ module.exports = {
       exec_mode: "fork",
       increment_var: "PORT",
       env: {
-        PORT: 8080
+        PORT: 4444
       }
     }
   ]

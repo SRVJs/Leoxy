@@ -1,7 +1,7 @@
 # =============== #
 # Stage 1: Build  #
 # =============== #
-FROM golang:1.26.2 AS build
+FROM golang:1.26.2 AS builder
 
 WORKDIR /app
 
@@ -11,17 +11,31 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /leoxy ./app/cli
+RUN CGO_ENABLED=0 GOOS=linux go build \ 
+                              -trimpath \
+                              -ldflags="-s -w" \ 
+                              -o /out/leoxy ./app/cli
 
 # =================== #
 # Stage 2: Production #
 # =================== #
 FROM golang:1.26.2
 
+RUN apk add --no-cache ca-certificates wget \
+               && addgroup -S leoxy \
+               && adduser -S -G leoxy leoxy \
+               && mkdir -p /app/leoxy \
+               && chown -R leoxy:leoxy /app/leoxy
+
 WORKDIR /app
 
-COPY --from=build /leoxy /usr/local/bin/leoxy
+COPY --from=builder /out/leoxy /usr/local/bin/leoxy
 
-EXPOSE 8080
+USER leoxy
 
-ENTRYPOINT ["leoxy"]
+EXPOSE 4444
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+               CMD wget -q -O /dev/null http://127.0.0.1:4444/health/live || exit 1
+
+ENTRYPOINT ["/usr/local/bin/leoxy"]

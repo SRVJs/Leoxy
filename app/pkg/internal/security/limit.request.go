@@ -1,4 +1,4 @@
-package middleware
+package security
 
 import (
 	"net"
@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/elrefai99/Leoxy/app/pkg/internal/utils"
+	"github.com/elrefai99/Leoxy/app/pkg/internal/common"
 )
 
 type requestCounter struct {
@@ -27,7 +27,7 @@ func LimitRequest(limit int, next http.Handler, trustedProxyCIDRs ...[]*net.IPNe
 		if len(trustedProxyCIDRs) > 0 {
 			trusted = trustedProxyCIDRs[0]
 		}
-		clientIP := utils.GetClientIP(r, trusted)
+		clientIP := common.GetClientIP(r, trusted)
 		now := time.Now()
 
 		mutex.Lock()

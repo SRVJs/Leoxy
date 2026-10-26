@@ -1,4 +1,4 @@
-package middleware
+package security
 
 import (
 	"crypto/subtle"
@@ -7,7 +7,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/elrefai99/Leoxy/app/pkg/internal/utils"
+	"github.com/elrefai99/Leoxy/app/pkg/internal/common"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -34,7 +34,7 @@ func accessControl(allow, deny []string, methods, paths, apiKeys []string, jwtSe
 		return nil, err
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ip := net.ParseIP(utils.GetClientIP(r, trusted))
+		ip := net.ParseIP(common.GetClientIP(r, trusted))
 		for _, network := range denied {
 			if ip != nil && network.Contains(ip) {
 				http.Error(w, "access denied", http.StatusForbidden)
