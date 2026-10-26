@@ -1,3 +1,10 @@
+## [3.8.2] - 2026-10-26
+
+### Fixed
+- fix prefix handling for root and non-root paths
+- correct path trimming in proxy handlers
+- update version references
+
 # Changelog
 
 ## [3.8.0] - 2026-10-23

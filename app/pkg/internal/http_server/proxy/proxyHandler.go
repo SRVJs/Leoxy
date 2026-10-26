@@ -59,12 +59,13 @@ func ParseHTTPUpstreamURL(value string) (*url.URL, error) {
 
 func ProxyHandler(prefix string, proxy *httputil.ReverseProxy) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if prefix != "/" {
+		if prefix == "/" {
 			r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
 			if r.URL.Path == "" {
 				r.URL.Path = "/"
 			}
 		}
+
 		proxy.ServeHTTP(w, r)
 	}
 }
