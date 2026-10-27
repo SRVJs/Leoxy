@@ -6,6 +6,7 @@
 .gocache
 baseline/
 .agents
+dist
 
 # Logs
 *.log
