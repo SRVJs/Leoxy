@@ -1,22 +1,20 @@
-# Logs
-*.log
-
-# Folders
-.DS_Store
-dist
+# Folder
 .claude
 .cursor/
 .opencode
 .gemini
 .gocache
-coverage
-*.local
 baseline/
+.agents
+
+# Logs
+*.log
 
 # ai files
 GEMINI.md
 roadmap.md
-# Editor directories and files
+
+# other
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -25,12 +23,8 @@ roadmap.md
 *.njsproj
 *.sln
 *.sw?
-
 *.tsbuildinfo
-.env
-.env.dev
+
 tmp
-*.exe
-leoxy
-.air.toml
 cross-platform.md
+leoxy
