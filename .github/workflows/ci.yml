@@ -16,6 +16,10 @@ jobs:
   lint:
     runs-on: ubuntu-latest
 
+    defaults:
+      run:
+        working-directory: ./app
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -23,16 +27,21 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: app/go.mod
           cache: true
+          cache-dependency-path: app/go.sum
 
       - name: Download dependencies
         run: go mod download
 
-      - name: Test
+      - name: Vet
         run: go vet ./...
   test:
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./app
 
     steps:
       - name: Checkout
@@ -41,8 +50,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: app/go.mod
           cache: true
+          cache-dependency-path: app/go.sum
 
       - name: Download dependencies
         run: go mod download
@@ -53,6 +63,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
 
+    defaults:
+      run:
+        working-directory: ./app
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,8 +74,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: app/go.mod
           cache: true
+          cache-dependency-path: app/go.sum
 
       - name: Download dependencies
         run: go mod download
@@ -81,7 +96,7 @@ jobs:
       - name: Build Docker image
         uses: docker/build-push-action@v6
         with:
-          context: ./docker/lx-2
+          context: .
           file: ./docker/lx-2/Dockerfile
           push: false
           load: true

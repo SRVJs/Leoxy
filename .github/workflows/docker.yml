@@ -22,7 +22,7 @@ jobs:
       - name: Build Docker image
         uses: docker/build-push-action@v6
         with:
-          context: ./docker/lx-2
+          context: .
           file: ./docker/lx-2/Dockerfile
           push: false
           load: true
@@ -92,7 +92,7 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
-          context: /docker/lx-2/
+          context: .
           file: ./docker/lx-2/Dockerfile
           push: ${{ steps.check-dockerhub.outputs.push }}
           load: ${{ steps.check-dockerhub.outputs.push != 'true' }}
