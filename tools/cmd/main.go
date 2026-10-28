@@ -22,6 +22,7 @@ var (
 )
 
 var (
+	attempts atomic.Uint64
 	request  atomic.Uint64
 	failures atomic.Uint64
 	response atomic.Uint64
@@ -32,6 +33,7 @@ var memBefore, memAfter runtime.MemStats
 func main() {
 	target := flag.String("url", "", "Leoxy URL")
 	duration := flag.Duration("duration", 0, "Test duration")
+	requestLimit := flag.Int("request", 0, "Requests count")
 	concurrency := flag.Int("concurrency", 0, "Concurrent Worker")
 	pprofURL := flag.String("pprof", "", "Optional Leoxy heap profile URL")
 	profileOut := flag.String("profile-out", "docs/leoxy-heap.txt", "Heap profile output file")
@@ -52,6 +54,7 @@ func main() {
 			IdleConnTimeout:     90 * time.Second,
 		},
 	}
+	defer client.CloseIdleConnections()
 
 	ctx, cancel := context.WithTimeout(context.Background(), *duration)
 	defer cancel()
@@ -73,6 +76,16 @@ func main() {
 				if ctx.Err() != nil {
 					return
 				}
+
+				if *requestLimit > 0 {
+					slot := attempts.Add(1)
+					if int(slot) > *requestLimit {
+						return
+					}
+				} else {
+					attempts.Add(1)
+				}
+
 				req, err := http.NewRequestWithContext(ctx, http.MethodGet, *target, nil)
 				if err != nil {
 					failures.Add(1)
@@ -88,6 +101,9 @@ func main() {
 						return
 					}
 					failures.Add(1)
+					mu.Lock()
+					latencies = append(latencies, time.Since(reqStart))
+					mu.Unlock()
 					continue
 				}
 
@@ -115,6 +131,7 @@ func main() {
 		return latencies[i] < latencies[j]
 	})
 
+	totalAttempts := attempts.Load()
 	total := request.Load()
 	failed := failures.Load()
 
@@ -122,6 +139,7 @@ func main() {
 	fmt.Printf("Target: %s\n", *target)
 	fmt.Printf("Duration: %s\n", elapsed.Round(time.Millisecond))
 	fmt.Printf("Concurrency: %v\n", *concurrency)
+	fmt.Printf("Total attepts: %v\n", totalAttempts)
 	fmt.Printf("Success Requests: %v\n", total)
 	fmt.Printf("Failed Requests: %v\n", failed)
 	fmt.Printf("Throughput: %.2f req/s\n", float64(total)/elapsed.Seconds())

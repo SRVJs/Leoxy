@@ -10,9 +10,9 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
+	"github.com/elrefai99/Leoxy/app/pkg/core"
 	"github.com/elrefai99/Leoxy/app/pkg/internal/common"
 	"github.com/elrefai99/Leoxy/app/pkg/internal/file"
 	health "github.com/elrefai99/Leoxy/app/pkg/internal/http_server/Health"
@@ -45,14 +45,14 @@ func Run() {
 	mux.HandleFunc("/ping", health.Ping)
 	mux.HandleFunc("/health/live", health.HealthProxy)
 	mux.HandleFunc("/leoxy", func(w http.ResponseWriter, r *http.Request) {
-		http.ServeFile(w, r, "docs/index.html")
+		http.ServeFile(w, r, "docs/html/index.html")
 	})
 
 	metrics := common.NewMetrics()
 	mux.Handle("/metrics", http.HandlerFunc(metrics.Handler))
 
 	shutdown := make(chan os.Signal, 1)
-	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(shutdown, core.ShutdownSignals()...)
 
 	defer signal.Stop(shutdown)
 

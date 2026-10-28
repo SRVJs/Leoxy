@@ -3,10 +3,11 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/exec"
-	"runtime"
 	"strconv"
 	"strings"
+	"time"
+
+	platform "github.com/elrefai99/Leoxy/app/pkg/core"
 
 	"github.com/spf13/cobra"
 )
@@ -30,20 +31,30 @@ var stopCmd = &cobra.Command{
 			return fmt.Errorf("invalid PID file")
 		}
 
-		if runtime.GOOS == "windows" {
-			err = exec.Command("taskkill", "/PID", strconv.Itoa(pid), "/T", "/F").Run()
-		} else {
-			process, findErr := os.FindProcess(pid)
-			if findErr != nil {
-				err = findErr
-			} else {
-				err = process.Kill()
+		if !platform.ProcessRunning(pid) {
+			_ = os.Remove(pidFile)
+			return fmt.Errorf("server is not running")
+		}
+
+		if err := platform.RequestStop(pid); err != nil {
+			if forceErr := platform.ForceStop(pid); forceErr != nil {
+				_ = os.Remove(pidFile)
+				return fmt.Errorf("could not stop server: %w", forceErr)
 			}
 		}
 
-		if err != nil {
-			_ = os.Remove(pidFile)
-			return fmt.Errorf("could not stop server: %w", err)
+		for i := 0; i < 20; i++ {
+			if !platform.ProcessRunning(pid) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		if platform.ProcessRunning(pid) {
+			if err := platform.ForceStop(pid); err != nil {
+				_ = os.Remove(pidFile)
+				return fmt.Errorf("could not stop server: %w", err)
+			}
 		}
 
 		_ = os.Remove(pidFile)
