@@ -120,12 +120,4 @@ leoxy version     # Print version
 
 Set secrets via environment variables: `API_KEYS`, `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE`, `REDIS_PASSWORD`. Override port with `PORT`, rate limit with `RATE_LIMIT`.
 
-## Endpoints
-
-- `GET /ping` - Returns `PONG`
-- `GET /health/live` - Liveness check
-- `GET /health/ready` - Readiness check (checks HTTP upstreams)
-- `GET /metrics` - Request metrics
-- `GET /leoxy` - Project page
-
 For more details, see [CLI documentation](docs/cli.md) and [configuration examples](example/).
