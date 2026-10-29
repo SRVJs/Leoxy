@@ -1,3 +1,8 @@
+## [Unreleased]
+
+### Fixed
+- correct Docker Compose build context and Dockerfile path
+
 ## [3.8.2] - 2026-10-26
 
 ### Fixed
