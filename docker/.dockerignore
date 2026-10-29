@@ -7,6 +7,9 @@
 baseline/
 .agents
 dist
+script/
+tools
+example
 
 # Logs
 *.log
@@ -33,3 +36,4 @@ leoxy
 .go-version
 .coderabbit.yaml
 opencode.json
+ecosystem.config.cjs
