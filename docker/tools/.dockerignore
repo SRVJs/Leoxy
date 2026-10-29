@@ -7,6 +7,7 @@ dist
 coverage
 *.local
 roadmap.md
+baseline/
 
 # Editor directories and files
 .vscode/*

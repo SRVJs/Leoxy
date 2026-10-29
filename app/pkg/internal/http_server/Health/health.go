@@ -1,4 +1,4 @@
-package http_server
+package health
 
 import (
 	"context"
@@ -24,7 +24,7 @@ func HealthProxy(w http.ResponseWriter, r *http.Request) {
 
 func Readiness(targetGroups [][]*url.URL) http.HandlerFunc {
 	client := &http.Client{
-		Timeout: 2 * time.Second,
+		Timeout: 5 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -33,7 +33,7 @@ func Readiness(targetGroups [][]*url.URL) http.HandlerFunc {
 		for _, targets := range targetGroups {
 			available := false
 			for _, target := range targets {
-				ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+				ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 				request, err := http.NewRequestWithContext(ctx, http.MethodGet, target.String(), nil)
 				if err == nil {
 					response, requestErr := client.Do(request)
@@ -42,7 +42,7 @@ func Readiness(targetGroups [][]*url.URL) http.HandlerFunc {
 						available = response.StatusCode < http.StatusInternalServerError
 					}
 				}
-				cancel()
+				defer cancel()
 				if available {
 					break
 				}

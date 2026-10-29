@@ -1,103 +1,21 @@
-package http_server
+package udp
 
 import (
-	"errors"
 	"log"
 	"net"
 	"sync"
 	"time"
+
+	"github.com/elrefai99/Leoxy/app/pkg/internal/http_server/shared"
 )
 
-const maxTCPConnections = 1024
+const udpSessionIdleTimeout = 5 * time.Minute
 const maxUDPSessions = 10000
-const udpSessionIdleTimeout = 2 * time.Minute
-const tcpIdleTimeout = 5 * time.Minute
 
 type udpSession struct {
 	connection   *net.UDPConn
 	client       *net.UDPAddr
 	lastActivity time.Time
-}
-
-func RunTCPProxy(listener net.Listener, target string, done <-chan struct{}) error {
-	defer listener.Close()
-	connections := make(chan struct{}, maxTCPConnections)
-	go func() {
-		<-done
-		_ = listener.Close()
-	}()
-
-	for {
-		client, err := listener.Accept()
-		if err != nil {
-			if isClosedError(err) {
-				return nil
-			}
-			return err
-		}
-		select {
-		case connections <- struct{}{}:
-			go func() {
-				defer func() { <-connections }()
-				proxyTCPConnection(client, target)
-			}()
-		default:
-			_ = client.Close()
-		}
-	}
-}
-
-func proxyTCPConnection(client net.Conn, target string) {
-	defer client.Close()
-	upstream, err := net.DialTimeout("tcp", target, 10*time.Second)
-	if err != nil {
-		log.Printf("TCP upstream %q connection failed: %v", target, err)
-		return
-	}
-	defer upstream.Close()
-
-	_ = client.SetDeadline(time.Now().Add(tcpIdleTimeout))
-	_ = upstream.SetDeadline(time.Now().Add(tcpIdleTimeout))
-	var copies sync.WaitGroup
-	copies.Add(2)
-	go func() {
-		defer copies.Done()
-		copyTCP(upstream, client, client, upstream)
-		if conn, ok := upstream.(*net.TCPConn); ok {
-			_ = conn.CloseWrite()
-		}
-	}()
-	go func() {
-		defer copies.Done()
-		copyTCP(client, upstream, client, upstream)
-		if conn, ok := client.(*net.TCPConn); ok {
-			_ = conn.CloseWrite()
-		}
-	}()
-	copies.Wait()
-}
-
-func copyTCP(destination, source, client, upstream net.Conn) {
-	buffer := make([]byte, 32*1024)
-	for {
-		count, readErr := source.Read(buffer)
-		if count > 0 {
-			deadline := time.Now().Add(tcpIdleTimeout)
-			_ = client.SetDeadline(deadline)
-			_ = upstream.SetDeadline(deadline)
-			written := 0
-			for written < count {
-				writeCount, err := destination.Write(buffer[written:count])
-				written += writeCount
-				if err != nil || writeCount == 0 {
-					return
-				}
-			}
-		}
-		if readErr != nil {
-			return
-		}
-	}
 }
 
 func RunUDPProxy(conn *net.UDPConn, target string, done <-chan struct{}) error {
@@ -144,7 +62,7 @@ func RunUDPProxy(conn *net.UDPConn, target string, done <-chan struct{}) error {
 	for {
 		n, clientAddr, err := conn.ReadFromUDP(buffer)
 		if err != nil {
-			if isClosedError(err) {
+			if shared.IsClosedError(err) {
 				return nil
 			}
 			return err
@@ -210,8 +128,4 @@ func relayUDPResponse(listener *net.UDPConn, key string, session *udpSession, se
 			return
 		}
 	}
-}
-
-func isClosedError(err error) bool {
-	return errors.Is(err, net.ErrClosed)
 }

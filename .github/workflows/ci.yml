@@ -13,8 +13,13 @@ permissions:
   contents: read
 
 jobs:
+  # Main Package
   lint:
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./app
 
     steps:
       - name: Checkout
@@ -23,16 +28,21 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: app/go.mod
           cache: true
+          cache-dependency-path: app/go.sum
 
       - name: Download dependencies
         run: go mod download
 
-      - name: Test
+      - name: Vet
         run: go vet ./...
   test:
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./app
 
     steps:
       - name: Checkout
@@ -41,8 +51,9 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: app/go.mod
           cache: true
+          cache-dependency-path: app/go.sum
 
       - name: Download dependencies
         run: go mod download
@@ -53,6 +64,10 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
 
+    defaults:
+      run:
+        working-directory: ./app
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -60,8 +75,81 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version-file: app/go.mod
           cache: true
+          cache-dependency-path: app/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Build
+        run: go build ./...
+
+  # Tools Files
+  tools-lint:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./tools
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Vet
+        run: go vet ./...
+  tools-test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: ./tools
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.sum
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Test
+        run: go test ./...
+  tools-build:
+    runs-on: ubuntu-latest
+    needs: test
+
+    defaults:
+      run:
+        working-directory: ./tools
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: tools/go.mod
+          cache: true
+          cache-dependency-path: tools/go.sum
 
       - name: Download dependencies
         run: go mod download
