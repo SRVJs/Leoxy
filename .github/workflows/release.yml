@@ -1,4 +1,4 @@
-name: Auto Release from Package Version
+name: Release
 
 on:
   push:
