@@ -1,5 +1,6 @@
-GOOS ?= $(shell go env GOOS) # Operating system
-GOARCH ?= $(shell go env GOARCH) # CPU Arch
+GOOS ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
+GOARM ?=
 DIST ?= dist
 
 EXT :=
@@ -7,19 +8,20 @@ ifeq ($(GOOS),windows)
 EXT := .exe
 endif
 
-OUTPUT := $(DIST)/leoxy-$(GOOS)-$(GOARCH)$(EXT)
+ARCH := $(GOARCH)
+ifneq ($(GOARM),)
+ARCH := $(GOARCH)v$(GOARM)
+endif
 
-.PHONY: build run test clean
+OUTPUT := $(DIST)/leoxy-$(GOOS)-$(ARCH)$(EXT)
+
+.PHONY: build test run
 
 build:
-	mkdir -p $(DIST)
-	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build -trimpath -o $(OUTPUT) ./app/cli
-
-run:
-	go run ./app/cli
+	go build -trimpath -o $(OUTPUT) ./app/cli
 
 test:
 	go test ./...
 
-clean:
-	go clean
+run:
+	go run ./app/cli

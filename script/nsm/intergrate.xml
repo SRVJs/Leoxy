@@ -1,0 +1,9 @@
+<key>ProgramArguments</key>
+<array>
+  <string>/usr/local/bin/leoxy</string>
+  <string>run</string>
+  <string>--config</string>
+  <string>/Library/Application Support/leoxy/config.yaml</string>
+</array>
+<key>KeepAlive</key>
+<true/>
