@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"runtime"
@@ -66,6 +67,7 @@ func main() {
 
 	start := time.Now()
 
+	errorCatch := make(chan error, 1)
 	for i := 0; i < *concurrency; i++ {
 		wg.Add(1)
 
@@ -74,6 +76,7 @@ func main() {
 
 			for {
 				if ctx.Err() != nil {
+					errorCatch <- ctx.Err()
 					return
 				}
 
@@ -89,6 +92,7 @@ func main() {
 				req, err := http.NewRequestWithContext(ctx, http.MethodGet, *target, nil)
 				if err != nil {
 					failures.Add(1)
+					errorCatch <- err
 					return
 				}
 
@@ -98,6 +102,7 @@ func main() {
 
 				if err != nil {
 					if ctx.Err() != nil {
+						errorCatch <- ctx.Err()
 						return
 					}
 					failures.Add(1)
@@ -122,6 +127,11 @@ func main() {
 				mu.Unlock()
 			}
 		}()
+	}
+
+	if <-errorCatch != nil {
+		log.Fatal(<-errorCatch)
+		return
 	}
 
 	wg.Wait()
