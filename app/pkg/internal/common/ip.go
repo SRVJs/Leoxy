@@ -10,6 +10,15 @@ func GetIpAddress(r *http.Request) string {
 	return GetClientIP(r, nil)
 }
 
+func IsTrustedPeer(r *http.Request, trusted []*net.IPNet) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && contains(trusted, ip)
+}
+
 func GetClientIP(r *http.Request, trusted []*net.IPNet) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
@@ -21,15 +30,21 @@ func GetClientIP(r *http.Request, trusted []*net.IPNet) string {
 	}
 
 	addresses := forwardedFor(r.Header.Get("X-Forwarded-For"))
-	addresses = append(addresses, strings.TrimSpace(r.Header.Get("X-Real-IP")))
 	for i := len(addresses) - 1; i >= 0; i-- {
 		candidate := net.ParseIP(addresses[i])
-		if candidate != nil && !contains(trusted, candidate) {
+		if candidate == nil {
+			return host
+		}
+		if !contains(trusted, candidate) {
 			return candidate.String()
 		}
 	}
-	if candidate := net.ParseIP(strings.TrimSpace(r.Header.Get("CF-Connecting-IP"))); candidate != nil {
-		return candidate.String()
+	if len(addresses) == 0 {
+		for _, name := range []string{"X-Real-IP", "CF-Connecting-IP"} {
+			if candidate := net.ParseIP(strings.TrimSpace(r.Header.Get(name))); candidate != nil {
+				return candidate.String()
+			}
+		}
 	}
 	return host
 }
