@@ -65,13 +65,13 @@ func (limiter *RedisLimiter) Allow(key string, limit int) (bool, error) {
 	}
 	count, err := conn.increment(key)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return false, err
 	}
 	select {
 	case limiter.pool <- conn:
 	default:
-		conn.Close()
+		_ = conn.Close()
 	}
 	return count <= int64(limit), nil
 }
@@ -88,7 +88,7 @@ func (limiter *RedisLimiter) acquire() (*redisConn, error) {
 	}
 	conn := &redisConn{Conn: raw, reader: bufio.NewReader(raw)}
 	if err := conn.setup(limiter.password, limiter.database); err != nil {
-		raw.Close()
+		_ = raw.Close()
 		return nil, err
 	}
 	return conn, nil
