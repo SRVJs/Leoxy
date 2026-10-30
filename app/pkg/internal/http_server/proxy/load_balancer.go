@@ -36,7 +36,7 @@ func NewLoadBalancedProxy(targets []*url.URL, forwardIP bool, trustedProxyCIDRs 
 	}
 
 	var next uint64
-	proxy.Director = nil
+
 	proxy.Rewrite = func(request *httputil.ProxyRequest) {
 		target := targets[int(atomic.AddUint64(&next, 1)-1)%len(targets)]
 		clientIP := request.In.RemoteAddr
