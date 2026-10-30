@@ -116,7 +116,11 @@ func writeLog(path string, message string) {
 		log.Printf("open log file %s: %v", path, err)
 		return
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			log.Printf("close log file %s: %v", path, err)
+		}
+	}()
 	log.New(file, "", log.LstdFlags).Println(message)
 }
 

@@ -19,7 +19,11 @@ type udpSession struct {
 }
 
 func RunUDPProxy(conn *net.UDPConn, target string, done <-chan struct{}) error {
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			log.Printf("close UDP listener: %v", err)
+		}
+	}()
 	upstreamAddr, err := net.ResolveUDPAddr("udp", target)
 	if err != nil {
 		return err
@@ -114,7 +118,11 @@ func relayUDPResponse(listener *net.UDPConn, key string, session *udpSession, se
 		}
 		sessionsMu.Unlock()
 	}()
-	defer session.connection.Close()
+	defer func() {
+		if err := session.connection.Close(); err != nil {
+			log.Printf("close UDP session connection: %v", err)
+		}
+	}()
 	buffer := make([]byte, 65535)
 	for {
 		n, err := session.connection.Read(buffer)

@@ -59,7 +59,7 @@ func TestLoadBalancedTransportRetriesGet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response.Body.Close()
+	_ = response.Body.Close()
 	if len(attempted) != 2 || attempted[0] != "one" || attempted[1] != "two" {
 		t.Fatalf("attempted hosts = %v, want [one two]", attempted)
 	}

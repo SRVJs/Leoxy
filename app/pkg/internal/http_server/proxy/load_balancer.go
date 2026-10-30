@@ -35,29 +35,26 @@ func NewLoadBalancedProxy(targets []*url.URL, forwardIP bool, trustedProxyCIDRs 
 		http.Error(w, "bad gateway", http.StatusBadGateway)
 	}
 
-	originalDirector := proxy.Director
 	var next uint64
-	proxy.Director = func(r *http.Request) {
+	proxy.Director = nil
+	proxy.Rewrite = func(request *httputil.ProxyRequest) {
 		target := targets[int(atomic.AddUint64(&next, 1)-1)%len(targets)]
-		clientIP := r.RemoteAddr
+		clientIP := request.In.RemoteAddr
 		if len(trustedProxyCIDRs) > 0 {
-			clientIP = common.GetClientIP(r, trustedProxyCIDRs[0])
+			clientIP = common.GetClientIP(request.In, trustedProxyCIDRs[0])
 		}
 		if host, _, err := net.SplitHostPort(clientIP); err == nil {
 			clientIP = host
 		}
-		originalHost := r.Host
-		originalDirector(r)
-		r.URL.Scheme = target.Scheme
-		r.URL.Host = target.Host
-		r.Host = target.Host
-		r.Header.Del("CF-Connecting-IP")
-		r.Header.Del("X-Real-IP")
-		r.Header.Set("X-Forwarded-For", clientIP)
-		r.Header.Set("X-Forwarded-Proto", shared.RequestScheme(r))
-		r.Header.Set("X-Forwarded-Host", originalHost)
+		originalHost := request.In.Host
+		request.SetURL(target)
+		request.Out.Header.Del("CF-Connecting-IP")
+		request.Out.Header.Del("X-Real-IP")
+		request.Out.Header.Set("X-Forwarded-For", clientIP)
+		request.Out.Header.Set("X-Forwarded-Proto", shared.RequestScheme(request.In))
+		request.Out.Header.Set("X-Forwarded-Host", originalHost)
 		if forwardIP {
-			r.Header.Set("X-Real-IP", clientIP)
+			request.Out.Header.Set("X-Real-IP", clientIP)
 		}
 	}
 	return proxy

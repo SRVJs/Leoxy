@@ -18,14 +18,14 @@ func Ping(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("PONG"))
+	_, _ = w.Write([]byte("PONG"))
 }
 
 func HealthProxy(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"status":"ok"}`))
+	_, _ = w.Write([]byte(`{"status":"ok"}`))
 }
 
 func Readiness(targetGroups [][]*url.URL) http.HandlerFunc {
@@ -45,7 +45,7 @@ func Readiness(targetGroups [][]*url.URL) http.HandlerFunc {
 		if err != nil {
 			return false
 		}
-		response.Body.Close()
+		_ = response.Body.Close()
 		return response.StatusCode < http.StatusInternalServerError
 	}
 

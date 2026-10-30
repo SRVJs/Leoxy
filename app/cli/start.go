@@ -51,7 +51,11 @@ var startCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		defer logFile.Close()
+		defer func() {
+			if err := logFile.Close(); err != nil {
+				log.Printf("close log file: %v", err)
+			}
+		}()
 		if err := logFile.Chmod(0600); err != nil {
 			return err
 		}

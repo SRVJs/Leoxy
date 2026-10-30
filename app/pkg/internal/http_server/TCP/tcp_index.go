@@ -13,7 +13,11 @@ const maxTCPConnections = 1024
 const tcpIdleTimeout = 5 * time.Minute
 
 func RunTCPProxy(listener net.Listener, target string, done <-chan struct{}) error {
-	defer listener.Close()
+	defer func() {
+		if err := listener.Close(); err != nil {
+			log.Printf("close TCP listener: %v", err)
+		}
+	}()
 	connections := make(chan struct{}, maxTCPConnections)
 	go func() {
 		<-done
@@ -41,13 +45,21 @@ func RunTCPProxy(listener net.Listener, target string, done <-chan struct{}) err
 }
 
 func proxyTCPConnection(client net.Conn, target string) {
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.Printf("close TCP client connection: %v", err)
+		}
+	}()
 	upstream, err := net.DialTimeout("tcp", target, 10*time.Second)
 	if err != nil {
 		log.Printf("TCP upstream %q connection failed: %v", target, err)
 		return
 	}
-	defer upstream.Close()
+	defer func() {
+		if err := upstream.Close(); err != nil {
+			log.Printf("close TCP upstream connection: %v", err)
+		}
+	}()
 
 	_ = client.SetDeadline(time.Now().Add(tcpIdleTimeout))
 	_ = upstream.SetDeadline(time.Now().Add(tcpIdleTimeout))

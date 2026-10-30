@@ -51,7 +51,7 @@ func (limiter *RedisLimiter) Allow(key string, limit int) (bool, error) {
 			return false, err
 		}
 		if err = limiter.initialize(connection); err != nil {
-			connection.Close()
+			_ = connection.Close()
 			return false, err
 		}
 	}
@@ -60,10 +60,10 @@ func (limiter *RedisLimiter) Allow(key string, limit int) (bool, error) {
 		select {
 		case limiter.pool <- connection:
 		default:
-			connection.Close()
+			_ = connection.Close()
 		}
 	} else {
-		connection.Close()
+		_ = connection.Close()
 	}
 	return allowed, err
 }
