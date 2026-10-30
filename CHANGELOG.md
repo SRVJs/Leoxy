@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Changed
+- upgrade Go to 1.27.3 and refresh dependencies
+- bump version to 1.9.1
+
 ### Fixed
 - correct Docker Compose build context and Dockerfile path
 

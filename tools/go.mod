@@ -1,6 +1,6 @@
 module github.com/elrefai99/Leoxy/tools
 
-go 1.26.2
+go 1.27.3
 
 require (
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
