@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	serverapp "github.com/elrefai99/Leoxy/app/pkg/server"
+	"github.com/elrefai99/Leoxy/app/pkg/core"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +17,7 @@ var rootCmd = &cobra.Command{
 	Short:   "Leoxy reverse proxy service",
 	Version: version,
 	Run: func(cmd *cobra.Command, args []string) {
-		serverapp.Run()
+		core.Run()
 	},
 }
 
@@ -36,7 +36,7 @@ var runCmd = &cobra.Command{
 	Short:  "Run the server",
 	Hidden: true,
 	Run: func(cmd *cobra.Command, args []string) {
-		serverapp.Run()
+		core.Run()
 	},
 }
 
