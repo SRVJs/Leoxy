@@ -1,15 +1,20 @@
 package security
 
 import (
+	"crypto/sha256"
 	"crypto/subtle"
+	"errors"
 	"net"
 	"net/http"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/elrefai99/Leoxy/app/pkg/internal/common"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+const minJWTSecretLength = 32
 
 func AccessControl(allow, deny []string, methods, paths, apiKeys []string, jwtSecret string, requireMTLS bool, next http.Handler, trustedProxyCIDRs ...string) (http.Handler, error) {
 	return accessControl(allow, deny, methods, paths, apiKeys, jwtSecret, "", "", requireMTLS, next, trustedProxyCIDRs...)
@@ -20,6 +25,14 @@ func AccessControlWithJWT(allow, deny []string, methods, paths, apiKeys []string
 }
 
 func accessControl(allow, deny []string, methods, paths, apiKeys []string, jwtSecret, jwtIssuer, jwtAudience string, requireMTLS bool, next http.Handler, trustedProxyCIDRs ...string) (http.Handler, error) {
+	if jwtSecret != "" && len(jwtSecret) < minJWTSecretLength {
+		return nil, errors.New("jwt_secret must be at least 32 bytes")
+	}
+	for _, key := range apiKeys {
+		if strings.TrimSpace(key) == "" {
+			return nil, errors.New("api_keys must not contain empty values")
+		}
+	}
 	allowed, err := networks(allow)
 	if err != nil {
 		return nil, err
@@ -54,17 +67,18 @@ func accessControl(allow, deny []string, methods, paths, apiKeys []string, jwtSe
 				return
 			}
 		}
-		if len(methodSet) > 0 && !methodSet[r.Method] {
+		if r.Method == http.MethodTrace || (len(methodSet) > 0 && !methodSet[r.Method]) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if len(paths) > 0 && !matchesPath(r.URL.Path, paths) {
+		if len(paths) > 0 && !matchesPath(path.Clean(r.URL.Path), paths) {
 			http.NotFound(w, r)
 			return
 		}
 		apiKeyValid := validAPIKey(r.Header.Get("Authorization"), apiKeys) || validAPIKey(r.Header.Get("X-API-Key"), apiKeys)
 		jwtValid := jwtSecret != "" && validJWT(r.Header.Get("Authorization"), jwtSecret, jwtIssuer, jwtAudience)
 		if (len(apiKeys) > 0 || jwtSecret != "") && !apiKeyValid && !jwtValid {
+			w.Header().Set("WWW-Authenticate", "Bearer")
 			http.Error(w, "authentication required", http.StatusUnauthorized)
 			return
 		}
@@ -95,6 +109,7 @@ func set(values []string) map[string]bool {
 	}
 	return result
 }
+
 func matchesPath(value string, patterns []string) bool {
 	for _, pattern := range patterns {
 		if matched, _ := path.Match(pattern, value); matched {
@@ -103,17 +118,27 @@ func matchesPath(value string, patterns []string) bool {
 	}
 	return false
 }
+
 func validAPIKey(value string, keys []string) bool {
 	value = strings.TrimSpace(strings.TrimPrefix(value, "Bearer "))
-	for _, key := range keys {
-		if subtle.ConstantTimeCompare([]byte(value), []byte(key)) == 1 {
-			return true
-		}
+	if value == "" {
+		return false
 	}
-	return false
+	sum := sha256.Sum256([]byte(value))
+	matched := 0
+	for _, key := range keys {
+		expected := sha256.Sum256([]byte(key))
+		matched |= subtle.ConstantTimeCompare(sum[:], expected[:])
+	}
+	return matched == 1
 }
+
 func validJWT(value, secret, issuer, audience string) bool {
-	options := []jwt.ParserOption{jwt.WithValidMethods([]string{"HS256"}), jwt.WithExpirationRequired()}
+	options := []jwt.ParserOption{
+		jwt.WithValidMethods([]string{"HS256"}),
+		jwt.WithExpirationRequired(),
+		jwt.WithLeeway(30 * time.Second),
+	}
 	if issuer != "" {
 		options = append(options, jwt.WithIssuer(issuer))
 	}

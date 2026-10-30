@@ -1,6 +1,9 @@
 package security
 
 import (
+	"bufio"
+	"bytes"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -9,18 +12,29 @@ import (
 	"time"
 )
 
+const redisTimeout = time.Second
+
+type redisConn struct {
+	net.Conn
+	reader *bufio.Reader
+}
+
 type RedisLimiter struct {
 	addr     string
 	password string
 	database int
-	pool     chan net.Conn
+	pool     chan *redisConn
 }
 
 func NewRedisLimiter(addr, password string, database int) *RedisLimiter {
-	return &RedisLimiter{addr: addr, password: password, database: database, pool: make(chan net.Conn, 16)}
+	return &RedisLimiter{addr: addr, password: password, database: database, pool: make(chan *redisConn, 16)}
 }
 
 func RedisRateLimit(addr, password string, database, limit int, key string, next http.Handler) http.Handler {
+	return RedisRateLimitWithFailOpen(addr, password, database, limit, key, false, next)
+}
+
+func RedisRateLimitWithFailOpen(addr, password string, database, limit int, key string, failOpen bool, next http.Handler) http.Handler {
 	if strings.TrimSpace(addr) == "" || limit <= 0 {
 		return next
 	}
@@ -28,6 +42,10 @@ func RedisRateLimit(addr, password string, database, limit int, key string, next
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		allowed, err := limiter.Allow(key+":"+time.Now().UTC().Format("200601021504"), limit)
 		if err != nil {
+			if failOpen {
+				next.ServeHTTP(w, r)
+				return
+			}
 			http.Error(w, "rate limit store unavailable", http.StatusServiceUnavailable)
 			return
 		}
@@ -41,84 +59,111 @@ func RedisRateLimit(addr, password string, database, limit int, key string, next
 }
 
 func (limiter *RedisLimiter) Allow(key string, limit int) (bool, error) {
-	var connection net.Conn
+	conn, err := limiter.acquire()
+	if err != nil {
+		return false, err
+	}
+	count, err := conn.increment(key)
+	if err != nil {
+		conn.Close()
+		return false, err
+	}
 	select {
-	case connection = <-limiter.pool:
+	case limiter.pool <- conn:
 	default:
-		var err error
-		connection, err = net.DialTimeout("tcp", limiter.addr, time.Second)
-		if err != nil {
-			return false, err
-		}
-		if err = limiter.initialize(connection); err != nil {
-			_ = connection.Close()
-			return false, err
-		}
+		conn.Close()
 	}
-	allowed, err := limiter.increment(connection, key, limit)
-	if err == nil {
-		select {
-		case limiter.pool <- connection:
-		default:
-			_ = connection.Close()
-		}
-	} else {
-		_ = connection.Close()
-	}
-	return allowed, err
+	return count <= int64(limit), nil
 }
 
-func (limiter *RedisLimiter) initialize(connection net.Conn) error {
-	if err := connection.SetDeadline(time.Now().Add(time.Second)); err != nil {
-		return err
+func (limiter *RedisLimiter) acquire() (*redisConn, error) {
+	select {
+	case conn := <-limiter.pool:
+		return conn, nil
+	default:
 	}
-	if limiter.password != "" {
-		if _, err := redisCommand(connection, "AUTH", limiter.password); err != nil {
+	raw, err := net.DialTimeout("tcp", limiter.addr, redisTimeout)
+	if err != nil {
+		return nil, err
+	}
+	conn := &redisConn{Conn: raw, reader: bufio.NewReader(raw)}
+	if err := conn.setup(limiter.password, limiter.database); err != nil {
+		raw.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+func (conn *redisConn) setup(password string, database int) error {
+	if password != "" {
+		if _, err := conn.do("AUTH", password); err != nil {
 			return err
 		}
 	}
-	if limiter.database > 0 {
-		if _, err := redisCommand(connection, "SELECT", strconv.Itoa(limiter.database)); err != nil {
+	if database > 0 {
+		if _, err := conn.do("SELECT", strconv.Itoa(database)); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (limiter *RedisLimiter) increment(connection net.Conn, key string, limit int) (bool, error) {
-	err := connection.SetDeadline(time.Now().Add(time.Second))
+func (conn *redisConn) increment(key string) (int64, error) {
+	if err := conn.SetDeadline(time.Now().Add(redisTimeout)); err != nil {
+		return 0, err
+	}
+	if err := conn.send([]string{"INCR", key}, []string{"EXPIRE", key, "120"}); err != nil {
+		return 0, err
+	}
+	count, err := conn.reply()
 	if err != nil {
-		return false, err
+		return 0, err
 	}
-	value, err := redisCommand(connection, "INCR", key)
-	if err != nil {
-		return false, err
+	if _, err := conn.reply(); err != nil {
+		return 0, err
 	}
-	if value == 1 {
-		_, err = redisCommand(connection, "EXPIRE", key, "60")
-	}
-	return value <= int64(limit), err
+	return count, nil
 }
 
-func redisCommand(connection net.Conn, command ...string) (int64, error) {
-	request := fmt.Sprintf("*%d\r\n", len(command))
-	for _, part := range command {
-		request += "$" + strconv.Itoa(len(part)) + "\r\n" + part + "\r\n"
-	}
-	if _, err := connection.Write([]byte(request)); err != nil {
+func (conn *redisConn) do(parts ...string) (int64, error) {
+	if err := conn.SetDeadline(time.Now().Add(redisTimeout)); err != nil {
 		return 0, err
 	}
-	buffer := make([]byte, 256)
-	count, err := connection.Read(buffer)
+	if err := conn.send(parts); err != nil {
+		return 0, err
+	}
+	return conn.reply()
+}
+
+func (conn *redisConn) send(commands ...[]string) error {
+	var buffer bytes.Buffer
+	for _, parts := range commands {
+		fmt.Fprintf(&buffer, "*%d\r\n", len(parts))
+		for _, part := range parts {
+			fmt.Fprintf(&buffer, "$%d\r\n%s\r\n", len(part), part)
+		}
+	}
+	_, err := conn.Write(buffer.Bytes())
+	return err
+}
+
+func (conn *redisConn) reply() (int64, error) {
+	line, err := conn.reader.ReadString('\n')
 	if err != nil {
 		return 0, err
 	}
-	response := strings.TrimSpace(string(buffer[:count]))
-	if strings.HasPrefix(response, "-") {
-		return 0, fmt.Errorf("redis: %s", response[1:])
+	line = strings.TrimRight(line, "\r\n")
+	if line == "" {
+		return 0, errors.New("redis: empty reply")
 	}
-	if strings.HasPrefix(response, ":") {
-		return strconv.ParseInt(response[1:], 10, 64)
+	switch line[0] {
+	case '-':
+		return 0, fmt.Errorf("redis: %s", line[1:])
+	case ':':
+		return strconv.ParseInt(line[1:], 10, 64)
+	case '+':
+		return 0, nil
+	default:
+		return 0, fmt.Errorf("redis: unexpected reply %q", line)
 	}
-	return 0, nil
 }
