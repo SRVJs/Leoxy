@@ -1,43 +1,47 @@
 package file
 
-import "os"
+import (
+	"os"
+	"path/filepath"
+)
 
-const defaultConfig = `
-# Leoxy listens on this port. PORT can override it through the environment.
-server:
+const defaultConfig = `server:
+  host: "127.0.0.1"
   port: "4444"
 
-# Global security and request limits for all routes.
   security:
-    # HTTP methods accepted by the proxy.
+    rate_limit: 600
+    rate_limit_burst: 100
+    max_body: 10
     allowed_methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
+    trusted_proxy_cidrs: []
+    internal_cidrs: []
 
-# Each upstream maps a request path to one or more backend servers.
 upstream:
   - name: "server_runner"
-    # Requests under /api are forwarded to one of these servers.
     path: /
-    # Use server_url for a single backend; use servers for multiple backends.
     server_url: "http://localhost:3000"
 `
 
 func CreateConfig() error {
-	if err := os.MkdirAll("leoxy", 0700); err != nil {
+	dir := filepath.Dir(ConfigPath)
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}
-	if err := os.Chmod("leoxy", 0700); err != nil {
-		return err
-	}
+	_ = os.Chmod(dir, 0700)
 
-	configPath := "leoxy/config.yaml"
-	if _, err := os.Stat(configPath); err == nil {
-		return os.Chmod(configPath, 0600)
+	if _, err := os.Stat(ConfigPath); err == nil {
+		_ = os.Chmod(ConfigPath, 0600)
+		return nil
 	} else if !os.IsNotExist(err) {
 		return err
 	}
 
-	if err := os.WriteFile(configPath, []byte(defaultConfig), 0600); err != nil {
+	file, err := os.OpenFile(ConfigPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
 		return err
 	}
-	return os.Chmod(configPath, 0600)
+	defer file.Close()
+	_, err = file.WriteString(defaultConfig)
+	return err
 }

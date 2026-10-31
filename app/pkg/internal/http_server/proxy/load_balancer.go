@@ -1,60 +1,128 @@
 package proxy
 
 import (
+	"errors"
 	"log"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
+
+	"context"
 
 	"github.com/elrefai99/Leoxy/app/pkg/internal/common"
 	"github.com/elrefai99/Leoxy/app/pkg/internal/http_server/shared"
 )
 
-func LoadBalancedProxyHandler(prefix string, targets []*url.URL, forwardIP bool, trustedProxyCIDRs ...[]*net.IPNet) http.HandlerFunc {
-	proxy := NewLoadBalancedProxy(targets, forwardIP, trustedProxyCIDRs...)
-	return func(w http.ResponseWriter, r *http.Request) {
-		if prefix == "/" {
-			r.URL.Path = strings.TrimPrefix(r.URL.Path, prefix)
-			if r.URL.Path == "" {
-				r.URL.Path = "/"
-			}
-		}
+const targetCooldown = 10 * time.Second
 
-		proxy.ServeHTTP(w, r)
+type targetHealth struct {
+	mutex     sync.Mutex
+	downUntil map[string]time.Time
+}
+
+func newTargetHealth() *targetHealth {
+	return &targetHealth{downUntil: make(map[string]time.Time)}
+}
+
+func targetKey(target *url.URL) string {
+	return target.Scheme + "://" + target.Host
+}
+
+func (h *targetHealth) isDown(key string) bool {
+	if h == nil {
+		return false
 	}
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	until, ok := h.downUntil[key]
+	if !ok {
+		return false
+	}
+	if time.Now().After(until) {
+		delete(h.downUntil, key)
+		return false
+	}
+	return true
+}
+
+func (h *targetHealth) markDown(key string) {
+	if h == nil {
+		return
+	}
+	h.mutex.Lock()
+	defer h.mutex.Unlock()
+	h.downUntil[key] = time.Now().Add(targetCooldown)
+}
+
+func pickTarget(targets []*url.URL, counter *uint64, health *targetHealth) *url.URL {
+	for range targets {
+		target := targets[int(atomic.AddUint64(counter, 1)-1)%len(targets)]
+		if !health.isDown(targetKey(target)) {
+			return target
+		}
+	}
+	return targets[int(atomic.AddUint64(counter, 1)-1)%len(targets)]
+}
+
+func LoadBalancedProxyHandler(prefix string, targets []*url.URL, forwardIP bool, trustedProxyCIDRs ...[]*net.IPNet) http.HandlerFunc {
+	return NewLoadBalancedProxy(targets, forwardIP, trustedProxyCIDRs...).ServeHTTP
 }
 
 func NewLoadBalancedProxy(targets []*url.URL, forwardIP bool, trustedProxyCIDRs ...[]*net.IPNet) *httputil.ReverseProxy {
+	var trusted []*net.IPNet
+	if len(trustedProxyCIDRs) > 0 {
+		trusted = trustedProxyCIDRs[0]
+	}
+	health := newTargetHealth()
 	proxy := httputil.NewSingleHostReverseProxy(targets[0])
-	proxy.Transport = loadBalancedTransport{targets: targets, base: shared.ProxyTransport}
+	proxy.Transport = loadBalancedTransport{targets: targets, base: shared.ProxyTransport, health: health}
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		log.Printf("upstream request failed: %v", err)
+		var netErr net.Error
+		if errors.As(err, &netErr) && netErr.Timeout() {
+			http.Error(w, "gateway timeout", http.StatusGatewayTimeout)
+			return
+		}
 		http.Error(w, "bad gateway", http.StatusBadGateway)
 	}
 
+	originalDirector := proxy.Director
 	var next uint64
-
-	proxy.Rewrite = func(request *httputil.ProxyRequest) {
-		target := targets[int(atomic.AddUint64(&next, 1)-1)%len(targets)]
-		clientIP := request.In.RemoteAddr
-		if len(trustedProxyCIDRs) > 0 {
-			clientIP = common.GetClientIP(request.In, trustedProxyCIDRs[0])
+	proxy.Director = func(r *http.Request) {
+		target := pickTarget(targets, &next, health)
+		clientIP := r.RemoteAddr
+		if len(trusted) > 0 {
+			clientIP = common.GetClientIP(r, trusted)
 		}
 		if host, _, err := net.SplitHostPort(clientIP); err == nil {
 			clientIP = host
 		}
-		originalHost := request.In.Host
-		request.SetURL(target)
-		request.Out.Header.Del("CF-Connecting-IP")
-		request.Out.Header.Del("X-Real-IP")
-		request.Out.Header.Set("X-Forwarded-For", clientIP)
-		request.Out.Header.Set("X-Forwarded-Proto", shared.RequestScheme(request.In))
-		request.Out.Header.Set("X-Forwarded-Host", originalHost)
+		proto := shared.RequestScheme(r)
+		if len(trusted) > 0 && common.IsTrustedPeer(r, trusted) {
+			if forwarded := r.Header.Get("X-Forwarded-Proto"); forwarded == "http" || forwarded == "https" {
+				proto = forwarded
+			}
+		}
+		originalHost := r.Host
+		originalDirector(r)
+		r.URL.Scheme = target.Scheme
+		r.URL.Host = target.Host
+		r.Host = target.Host
+		r.Header.Del("CF-Connecting-IP")
+		r.Header.Del("X-Real-IP")
+		r.Header.Del("X-API-Key")
+		r.Header.Set("X-Forwarded-For", clientIP)
+		r.Header.Set("X-Forwarded-Proto", proto)
+		r.Header.Set("X-Forwarded-Host", originalHost)
 		if forwardIP {
-			request.Out.Header.Set("X-Real-IP", clientIP)
+			r.Header.Set("X-Real-IP", clientIP)
 		}
 	}
 	return proxy
@@ -63,10 +131,14 @@ func NewLoadBalancedProxy(targets []*url.URL, forwardIP bool, trustedProxyCIDRs 
 type loadBalancedTransport struct {
 	targets []*url.URL
 	base    http.RoundTripper
+	health  *targetHealth
 }
 
 func (t loadBalancedTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	resp, err := t.base.RoundTrip(r)
+	if err != nil && r.Context().Err() == nil {
+		t.health.markDown(targetKey(r.URL))
+	}
 	if err == nil || len(t.targets) < 2 || !shared.RetryableMethod(r.Method) || (r.Body != nil && r.Body != http.NoBody && r.GetBody == nil) {
 		return resp, err
 	}
@@ -75,20 +147,28 @@ func (t loadBalancedTransport) RoundTrip(r *http.Request) (*http.Response, error
 		if target.Host == r.URL.Host && target.Scheme == r.URL.Scheme {
 			continue
 		}
+		if t.health.isDown(targetKey(target)) {
+			continue
+		}
 		retry := r.Clone(r.Context())
 		retry.URL.Scheme = target.Scheme
 		retry.URL.Host = target.Host
 		retry.Host = target.Host
 		if r.GetBody != nil {
-			retry.Body, err = r.GetBody()
-			if err != nil {
+			body, bodyErr := r.GetBody()
+			if bodyErr != nil {
 				continue
 			}
+			retry.Body = body
 		}
 		resp, err = t.base.RoundTrip(retry)
 		if err == nil {
 			return resp, nil
 		}
+		if r.Context().Err() != nil {
+			return nil, err
+		}
+		t.health.markDown(targetKey(target))
 	}
 	return nil, err
 }
