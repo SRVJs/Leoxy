@@ -5,7 +5,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"runtime"
@@ -14,22 +13,15 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/elrefai99/Leoxy/tools/intenal/fs"
-)
-
-var (
-	mu sync.Mutex
-	wg sync.WaitGroup
+	"github.com/elrefai99/Leoxy/tools/fs"
 )
 
 var (
 	attempts atomic.Uint64
-	request  atomic.Uint64
+	success  atomic.Uint64
 	failures atomic.Uint64
-	response atomic.Uint64
+	received atomic.Uint64
 )
-
-var memBefore, memAfter runtime.MemStats
 
 func main() {
 	target := flag.String("url", "", "Leoxy URL")
@@ -41,8 +33,8 @@ func main() {
 
 	flag.Parse()
 
-	if *concurrency < 1 || *duration <= 0 {
-		fmt.Fprintln(os.Stderr, "Concurrency and duration must be positive")
+	if *target == "" || *concurrency < 1 || *duration <= 0 {
+		fmt.Fprintln(os.Stderr, "url, concurrency and duration are required")
 		os.Exit(2)
 	}
 
@@ -60,100 +52,81 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), *duration)
 	defer cancel()
 
+	var mutex sync.Mutex
+	var wg sync.WaitGroup
 	latencies := make([]time.Duration, 0, 100000)
 
+	var memBefore, memAfter runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&memBefore)
 
 	start := time.Now()
 
-	errorCatch := make(chan error, 1)
 	for i := 0; i < *concurrency; i++ {
 		wg.Add(1)
-
 		go func() {
 			defer wg.Done()
-
-			for {
-				if ctx.Err() != nil {
-					errorCatch <- ctx.Err()
+			for ctx.Err() == nil {
+				slot := attempts.Add(1)
+				if *requestLimit > 0 && slot > uint64(*requestLimit) {
+					attempts.Add(^uint64(0))
 					return
-				}
-
-				if *requestLimit > 0 {
-					slot := attempts.Add(1)
-					if int(slot) > *requestLimit {
-						return
-					}
-				} else {
-					attempts.Add(1)
 				}
 
 				req, err := http.NewRequestWithContext(ctx, http.MethodGet, *target, nil)
 				if err != nil {
 					failures.Add(1)
-					errorCatch <- err
 					return
 				}
 
 				reqStart := time.Now()
 				resp, err := client.Do(req)
-				elapsed := time.Since(reqStart)
-
 				if err != nil {
 					if ctx.Err() != nil {
-						errorCatch <- ctx.Err()
 						return
 					}
 					failures.Add(1)
-					mu.Lock()
+					mutex.Lock()
 					latencies = append(latencies, time.Since(reqStart))
-					mu.Unlock()
+					mutex.Unlock()
 					continue
 				}
 
 				n, readErr := io.Copy(io.Discard, resp.Body)
-				closeError := resp.Body.Close()
+				closeErr := resp.Body.Close()
+				elapsed := time.Since(reqStart)
 
-				if readErr != nil || closeError != nil || resp.StatusCode >= 500 {
+				if readErr != nil || closeErr != nil || resp.StatusCode >= 500 {
 					failures.Add(1)
 				} else {
-					request.Add(1)
-					response.Add(uint64(n))
+					success.Add(1)
+					received.Add(uint64(n))
 				}
 
-				mu.Lock()
+				mutex.Lock()
 				latencies = append(latencies, elapsed)
-				mu.Unlock()
+				mutex.Unlock()
 			}
 		}()
-	}
-
-	if <-errorCatch != nil {
-		log.Fatal(<-errorCatch)
-		return
 	}
 
 	wg.Wait()
 	elapsed := time.Since(start)
 	runtime.ReadMemStats(&memAfter)
-	sort.Slice(latencies, func(i, j int) bool {
-		return latencies[i] < latencies[j]
-	})
+	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
 
-	totalAttempts := attempts.Load()
-	total := request.Load()
+	total := success.Load()
 	failed := failures.Load()
 
 	fmt.Println("\n========== Leoxy Network ==========")
 	fmt.Printf("Target: %s\n", *target)
 	fmt.Printf("Duration: %s\n", elapsed.Round(time.Millisecond))
 	fmt.Printf("Concurrency: %v\n", *concurrency)
-	fmt.Printf("Total attepts: %v\n", totalAttempts)
+	fmt.Printf("Total attempts: %v\n", attempts.Load())
 	fmt.Printf("Success Requests: %v\n", total)
 	fmt.Printf("Failed Requests: %v\n", failed)
 	fmt.Printf("Throughput: %.2f req/s\n", float64(total)/elapsed.Seconds())
-	fmt.Printf("Response Throughput: %.2f MB/s\n", float64(response.Load())/elapsed.Seconds()/1e6)
+	fmt.Printf("Response Throughput: %.2f MB/s\n", float64(received.Load())/elapsed.Seconds()/1e6)
 
 	if len(latencies) > 0 {
 		fmt.Printf("Latency p50: %s\n", percentile(latencies, 50))
@@ -166,16 +139,17 @@ func main() {
 	fmt.Printf("Heap in use: %.2f MiB\n", float64(memAfter.HeapInuse)/1024/1024)
 	fmt.Printf("Total allocated: %.2f MiB\n", float64(memAfter.TotalAlloc-memBefore.TotalAlloc)/1024/1024)
 	fmt.Printf("Malloc allocations: %d\n", memAfter.Mallocs-memBefore.Mallocs)
-	fmt.Println("(These memory/allocatin values belong to the client, not leoxy)")
+	fmt.Println("(These memory/allocation values belong to the client, not leoxy)")
 
 	if *pprofURL != "" {
 		if err := fs.SaveHeapProf(client, *pprofURL, *profileOut); err != nil {
 			fmt.Fprintf(os.Stderr, "Heap profile failed %v\n", err)
 			os.Exit(1)
 		}
+		fmt.Printf("\nLeoxy heap profile saved %s\n", *profileOut)
+		fmt.Printf("Analyze with: go tool pprof -top %s\n", *profileOut)
 	}
-	fmt.Printf("\nLeoxy heap profile saved %s\n", *profileOut)
-	fmt.Printf("Analyze with: go tool pprof -top %s\n", *profileOut)
+
 	if failed > 0 {
 		os.Exit(1)
 	}
@@ -183,11 +157,9 @@ func main() {
 
 func percentile(val []time.Duration, p int) time.Duration {
 	index := (len(val)*p+99)/100 - 1
-
 	if index < 0 {
 		index = 0
 	}
-
 	if index >= len(val) {
 		index = len(val) - 1
 	}

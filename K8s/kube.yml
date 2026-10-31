@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  creationTimestamp: "2026-10-31T02:49:35Z"
+  labels:
+    app: awesomearyabhata-pod
+  name: awesomearyabhata-pod
+spec:
+  containers:
+    - env:
+        - name: TERM
+          value: xterm
+      image: localhost/leoxy:latest
+      name: awesomearyabhata
+      securityContext: {}
+      stdin: true
+      tty: true

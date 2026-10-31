@@ -1,0 +1,34 @@
+[Unit]
+Description=Leoxy reverse proxy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=leoxy
+Group=leoxy
+WorkingDirectory=/var/lib/leoxy
+ExecStart=/usr/local/bin/leoxy run --config /etc/leoxy/config.yaml --data-dir /var/lib/leoxy
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallFilter=@system-service
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/leoxy
+ReadOnlyPaths=/etc/leoxy
+
+[Install]
+WantedBy=multi-user.target

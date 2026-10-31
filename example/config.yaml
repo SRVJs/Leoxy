@@ -1,57 +1,45 @@
-# Leoxy listens on this port. PORT can override it through the environment.
 server:
-  port: "8080"
+  host: "127.0.0.1"
+  port: "4444"
 
-# Global security and request limits for all routes.
   security:
-    # Requests allowed per second and the burst capacity per client.
     rate_limit: 100
     rate_limit_burst: 20
-    # Global request rate and burst capacity across clients.
     global_rate_limit: 1000
     global_rate_burst: 100
-    # Maximum request body size in MB; 0 disables this limit.
     max_body: 10
-    # HTTP methods accepted by the proxy.
     allowed_methods: [GET, POST, PUT, PATCH, DELETE, OPTIONS]
-    # Only trust forwarded client IP headers from these proxy CIDRs.
     trusted_proxy_cidrs: []
+    internal_cidrs: []
 
-# HTTP upstreams share server.port. HTTP/1.1, upstream HTTP/2, WebSocket
-# upgrades, and GraphQL over HTTP use these path-based routes. HTTP/3 is not
-# currently supported.
 upstream:
-  # HTTP load balancing; path is removed before forwarding.
   - name: "Backend"
-    # Requests under /api are forwarded to one of these servers.
     path: /api
-    # Forward the client IP to the selected backend.
     ip: true
-    # Maximum request body size in MB for this upstream.
     body: 10
-    # Multiple servers enable load balancing.
     servers:
       - "http://localhost:60459"
       - "http://localhost:60460"
     security:
-      # Per-route request rate and burst capacity.
       route_rate_limit: 100
       route_rate_burst: 20
 
   - name: "Frontend"
-    # The root path sends unmatched requests to this backend.
     path: /
-    # Use server_url for a single backend; use servers for multiple backends.
     server_url: "http://localhost:3000"
 
-  # Raw TCP listener. This traffic does not use HTTP security middleware.
   - name: "TCPService"
     protocol: tcp
     listen: ":7001"
     server_url: "127.0.0.1:7000"
+    security:
+      allow_cidrs: ["10.0.0.0/8"]
+      max_conns_per_ip: 20
 
-  # Raw UDP listener. Each client address gets an upstream UDP session.
   - name: "UDPService"
     protocol: udp
     listen: ":7002"
     server_url: "127.0.0.1:7003"
+    security:
+      allow_cidrs: ["10.0.0.0/8"]
+      max_conns_per_ip: 20
