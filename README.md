@@ -19,7 +19,7 @@ Client -> Nginx -> LX-2 -> Application servers
 ### Using Docker
 
 ```bash
-docker pull mohamed0699/leoxy:3.8.0
+docker pull mohamed0699/leoxy:latest
 docker run --rm -p 4444:4444 -v "${PWD}/leoxy:/app/leoxy" mohamed0699/leoxy:latest
 ```
 
