@@ -15,7 +15,7 @@ RUN cd app && CGO_ENABLED=0 GOOS=linux GOWORK=off go build -trimpath -ldflags="-
 # =================== #
 # Stage 2: Production #
 # =================== #
-FROM alpine:3.22
+FROM alpine:3.24
 
 RUN addgroup -S leoxy \
     && adduser -S -G leoxy -h /app leoxy \
