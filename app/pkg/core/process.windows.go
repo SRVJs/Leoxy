@@ -23,3 +23,11 @@ func ProcessRunning(pid int) bool {
 	}
 	return strings.Contains(string(out), strconv.Itoa(pid))
 }
+
+func ProcessMatches(pid int, name string) bool {
+	out, err := exec.Command("tasklist", "/FI", "PID eq "+strconv.Itoa(pid), "/NH").Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(string(out)), strings.ToLower(name))
+}
