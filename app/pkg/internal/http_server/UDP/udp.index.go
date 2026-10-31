@@ -10,53 +10,39 @@ import (
 )
 
 const udpSessionIdleTimeout = 5 * time.Minute
-const maxUDPSessions = 10000
+const maxUDPSessions = 4096
 
 type udpSession struct {
 	connection   *net.UDPConn
 	client       *net.UDPAddr
+	host         string
 	lastActivity time.Time
 }
 
-func RunUDPProxy(conn *net.UDPConn, target string, done <-chan struct{}) error {
-	defer conn.Close()
+type sessionTable struct {
+	mutex    sync.Mutex
+	sessions map[string]*udpSession
+	policy   *shared.StreamPolicy
+}
+
+func RunUDPProxy(conn *net.UDPConn, target string, policy *shared.StreamPolicy, done <-chan struct{}) error {
+	defer func() {
+		if err := conn.Close(); err != nil && !shared.IsClosedError(err) {
+			log.Printf("UDP listener close failed: %v", err)
+		}
+	}()
 	upstreamAddr, err := net.ResolveUDPAddr("udp", target)
 	if err != nil {
 		return err
 	}
 
-	sessions := make(map[string]*udpSession)
-	var sessionsMu sync.Mutex
-	var sessionCount int
+	table := &sessionTable{sessions: make(map[string]*udpSession), policy: policy}
 	go func() {
 		<-done
 		_ = conn.Close()
-		sessionsMu.Lock()
-		defer sessionsMu.Unlock()
-		for _, session := range sessions {
-			_ = session.connection.Close()
-		}
+		table.closeAll()
 	}()
-	go func() {
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-done:
-				return
-			case now := <-ticker.C:
-				sessionsMu.Lock()
-				for key, session := range sessions {
-					if now.Sub(session.lastActivity) >= udpSessionIdleTimeout {
-						delete(sessions, key)
-						sessionCount--
-						_ = session.connection.Close()
-					}
-				}
-				sessionsMu.Unlock()
-			}
-		}
-	}()
+	go table.sweep(done)
 
 	buffer := make([]byte, 65535)
 	for {
@@ -68,62 +54,122 @@ func RunUDPProxy(conn *net.UDPConn, target string, done <-chan struct{}) error {
 			return err
 		}
 
-		key := clientAddr.String()
-		sessionsMu.Lock()
-		session := sessions[key]
-		if session != nil {
-			session.lastActivity = time.Now()
-			sessionsMu.Unlock()
-		} else if sessionCount >= maxUDPSessions {
-			sessionsMu.Unlock()
-			continue
-		} else {
-			sessionsMu.Unlock()
-			upstream, dialErr := net.DialUDP("udp", nil, upstreamAddr)
-			if dialErr != nil {
-				log.Printf("UDP upstream %q connection failed: %v", target, dialErr)
-				continue
-			}
-			sessionsMu.Lock()
-			session = sessions[key]
-			if session == nil && sessionCount < maxUDPSessions {
-				session = &udpSession{connection: upstream, client: clientAddr, lastActivity: time.Now()}
-				sessions[key] = session
-				sessionCount++
-				go relayUDPResponse(conn, key, session, &sessionsMu, sessions, &sessionCount)
-			} else {
-				_ = upstream.Close()
-			}
-			sessionsMu.Unlock()
+		session := table.lookup(clientAddr.String())
+		if session == nil {
+			session = table.create(conn, clientAddr, upstreamAddr, target)
 			if session == nil {
 				continue
 			}
 		}
-		if _, err := session.connection.Write(buffer[:n]); err != nil {
+		if _, err := session.connection.Write(buffer[:n]); err != nil && !shared.IsClosedError(err) {
 			log.Printf("UDP upstream %q write failed: %v", target, err)
 		}
 	}
 }
 
-func relayUDPResponse(listener *net.UDPConn, key string, session *udpSession, sessionsMu *sync.Mutex, sessions map[string]*udpSession, sessionCount *int) {
-	defer func() {
-		sessionsMu.Lock()
-		if sessions[key] == session {
-			delete(sessions, key)
-			*sessionCount = *sessionCount - 1
+func (t *sessionTable) lookup(key string) *udpSession {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	session := t.sessions[key]
+	if session != nil {
+		session.lastActivity = time.Now()
+	}
+	return session
+}
+
+func (t *sessionTable) touch(session *udpSession) {
+	t.mutex.Lock()
+	session.lastActivity = time.Now()
+	t.mutex.Unlock()
+}
+
+func (t *sessionTable) create(listener *net.UDPConn, client, upstream *net.UDPAddr, target string) *udpSession {
+	t.mutex.Lock()
+	full := len(t.sessions) >= maxUDPSessions
+	t.mutex.Unlock()
+	if full {
+		return nil
+	}
+	host, ok := t.policy.Acquire(client)
+	if !ok {
+		return nil
+	}
+	connection, err := net.DialUDP("udp", nil, upstream)
+	if err != nil {
+		t.policy.Release(host)
+		log.Printf("UDP upstream %q connection failed: %v", target, err)
+		return nil
+	}
+	session := &udpSession{connection: connection, client: client, host: host, lastActivity: time.Now()}
+	key := client.String()
+
+	t.mutex.Lock()
+	if len(t.sessions) >= maxUDPSessions {
+		t.mutex.Unlock()
+		_ = connection.Close()
+		t.policy.Release(host)
+		return nil
+	}
+	t.sessions[key] = session
+	t.mutex.Unlock()
+
+	go t.relay(listener, key, session)
+	return session
+}
+
+func (t *sessionTable) remove(key string, session *udpSession) {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	if t.sessions[key] != session {
+		return
+	}
+	delete(t.sessions, key)
+	t.policy.Release(session.host)
+}
+
+func (t *sessionTable) closeAll() {
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
+	for _, session := range t.sessions {
+		_ = session.connection.Close()
+	}
+}
+
+func (t *sessionTable) sweep(done <-chan struct{}) {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-done:
+			return
+		case now := <-ticker.C:
+			t.mutex.Lock()
+			for key, session := range t.sessions {
+				if now.Sub(session.lastActivity) >= udpSessionIdleTimeout {
+					delete(t.sessions, key)
+					t.policy.Release(session.host)
+					_ = session.connection.Close()
+				}
+			}
+			t.mutex.Unlock()
 		}
-		sessionsMu.Unlock()
+	}
+}
+
+func (t *sessionTable) relay(listener *net.UDPConn, key string, session *udpSession) {
+	defer t.remove(key, session)
+	defer func() {
+		if err := session.connection.Close(); err != nil && !shared.IsClosedError(err) {
+			log.Printf("UDP upstream close failed: %v", err)
+		}
 	}()
-	defer session.connection.Close()
 	buffer := make([]byte, 65535)
 	for {
 		n, err := session.connection.Read(buffer)
 		if err != nil {
 			return
 		}
-		sessionsMu.Lock()
-		session.lastActivity = time.Now()
-		sessionsMu.Unlock()
+		t.touch(session)
 		if _, err := listener.WriteToUDP(buffer[:n], session.client); err != nil {
 			return
 		}

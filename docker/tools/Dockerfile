@@ -1,15 +1,19 @@
-from golang:1.27.3-alpine
+FROM golang:1.27.3-alpine AS builder
 
-workdir /app
+WORKDIR /src
 
-COPY ./tools/go.mod ./tools/go.sum ./
+COPY tools/go.mod tools/go.sum ./tools/
+RUN cd tools && go mod download
 
-RUN go mod download
+COPY tools ./tools
+RUN cd tools && CGO_ENABLED=0 GOOS=linux GOWORK=off go build -trimpath -ldflags="-s -w" -o /out/leoxy-bench ./cmd
 
-copy . .
+FROM alpine:3.22
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /out/lx-2 ./tools/cmd/
+RUN adduser -S -H bench
 
-COPY --from=builder /out/lx-2 /usr/local/bin/leoxy
- 
-CMD ["./usr/local/bin/lx-2"]
+COPY --from=builder /out/leoxy-bench /usr/local/bin/leoxy-bench
+
+USER bench
+
+ENTRYPOINT ["/usr/local/bin/leoxy-bench"]

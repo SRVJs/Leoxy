@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 )
 
 func SaveHeapProf(client *http.Client, url, output string) error {
@@ -18,12 +19,15 @@ func SaveHeapProf(client *http.Client, url, output string) error {
 		return fmt.Errorf("pprof returned http %d", resp.StatusCode)
 	}
 
+	if err := os.MkdirAll(filepath.Dir(output), 0755); err != nil {
+		return err
+	}
 	file, err := os.Create(output)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
-	ile, err := io.Copy(file, resp.Body)
-	fmt.Println(ile)
+
+	_, err = io.Copy(file, resp.Body)
 	return err
 }

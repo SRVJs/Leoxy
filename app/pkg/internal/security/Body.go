@@ -19,6 +19,14 @@ func Body(limitMB int, next http.Handler) http.Handler {
 			return
 		}
 
+		if r.Body == nil || r.Body == http.NoBody || r.ContentLength >= 0 {
+			if r.Body != nil && r.Body != http.NoBody {
+				r.Body = http.MaxBytesReader(w, r.Body, limit)
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 		if err != nil {
 			var maxBytesError *http.MaxBytesError

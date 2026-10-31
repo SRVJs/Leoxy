@@ -3,21 +3,23 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
-	serverapp "github.com/elrefai99/Leoxy/app/pkg/server"
+	"github.com/elrefai99/Leoxy/app/pkg/core"
 	"github.com/spf13/cobra"
 )
 
-const version = "v1.9.1"
+const version = "v1.10.1"
 
 var configFile, dataDir string
 
 var rootCmd = &cobra.Command{
-	Use:     "leoxy",
-	Short:   "Leoxy reverse proxy service",
-	Version: version,
+	Use:               "leoxy",
+	Short:             "Leoxy reverse proxy service",
+	Version:           version,
+	PersistentPreRunE: applyPaths,
 	Run: func(cmd *cobra.Command, args []string) {
-		serverapp.Run()
+		core.Run()
 	},
 }
 
@@ -36,8 +38,26 @@ var runCmd = &cobra.Command{
 	Short:  "Run the server",
 	Hidden: true,
 	Run: func(cmd *cobra.Command, args []string) {
-		serverapp.Run()
+		core.Run()
 	},
+}
+
+func applyPaths(cmd *cobra.Command, args []string) error {
+	if configFile != "" {
+		abs, err := filepath.Abs(configFile)
+		if err != nil {
+			return err
+		}
+		configFile = abs
+	}
+	if dataDir != "" {
+		abs, err := filepath.Abs(dataDir)
+		if err != nil {
+			return err
+		}
+		dataDir = abs
+	}
+	return core.Configure(configFile, dataDir)
 }
 
 func init() {

@@ -1,39 +1,26 @@
-# Folder
+.git
+.github
 .claude
-.cursor/
+.cursor
+.agents
 .opencode
 .gemini
 .gocache
-baseline/
-.agents
+.vscode
+.idea
+baseline
 dist
-script/
-tools
+docs
 example
-
-# Logs
+script
+tools
+leoxy
+log
 *.log
-
-# ai files
+*.exe
+.env
+.env.*
+tmp
 GEMINI.md
 roadmap.md
-
-# other
-.vscode/*
-!.vscode/extensions.json
-.idea
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-*.tsbuildinfo
-
-tmp
 cross-platform.md
-leoxy
-.github
-.go-version
-.coderabbit.yaml
-opencode.json
-ecosystem.config.cjs

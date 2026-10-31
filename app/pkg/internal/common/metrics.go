@@ -49,25 +49,33 @@ func (metrics *Metrics) Handler(w http.ResponseWriter, r *http.Request) {
 	defer metrics.mutex.RUnlock()
 
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
-	fmt.Fprintln(w, "# TYPE leoxy_requests_total counter")
+	if _, err := fmt.Fprintln(w, "# TYPE leoxy_requests_total counter"); err != nil {
+		return
+	}
 	paths := make([]string, 0, len(metrics.requests))
 	for path := range metrics.requests {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
 	for _, path := range paths {
-		fmt.Fprintf(w, "leoxy_requests_total{route=%q} %d\n", path, metrics.requests[path])
+		if _, err := fmt.Fprintf(w, "leoxy_requests_total{route=%q} %d\n", path, metrics.requests[path]); err != nil {
+			return
+		}
 	}
 
-	fmt.Fprintln(w, "# TYPE leoxy_responses_total counter")
+	if _, err := fmt.Fprintln(w, "# TYPE leoxy_responses_total counter"); err != nil {
+		return
+	}
 	statuses := make([]int, 0, len(metrics.status))
 	for status := range metrics.status {
 		statuses = append(statuses, status)
 	}
 	sort.Ints(statuses)
 	for _, status := range statuses {
-		fmt.Fprintf(w, "leoxy_responses_total{status=%q} %d\n", fmt.Sprint(status), metrics.status[status])
+		if _, err := fmt.Fprintf(w, "leoxy_responses_total{status=%q} %d\n", fmt.Sprint(status), metrics.status[status]); err != nil {
+			return
+		}
 	}
 
-	fmt.Fprintf(w, "leoxy_request_duration_seconds_total %f\n", metrics.requestTime.Seconds())
+	_, _ = fmt.Fprintf(w, "leoxy_request_duration_seconds_total %f\n", metrics.requestTime.Seconds())
 }

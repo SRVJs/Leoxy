@@ -12,42 +12,85 @@ import (
 const maxTCPConnections = 1024
 const tcpIdleTimeout = 5 * time.Minute
 
-func RunTCPProxy(listener net.Listener, target string, done <-chan struct{}) error {
-	defer listener.Close()
+func RunTCPProxy(listener net.Listener, target string, policy *shared.StreamPolicy, done <-chan struct{}) error {
+	defer func() {
+		if err := listener.Close(); err != nil && !shared.IsClosedError(err) {
+			log.Printf("TCP listener close failed: %v", err)
+		}
+	}()
 	connections := make(chan struct{}, maxTCPConnections)
 	go func() {
 		<-done
 		_ = listener.Close()
 	}()
 
+	var delay time.Duration
 	for {
 		client, err := listener.Accept()
 		if err != nil {
 			if shared.IsClosedError(err) {
 				return nil
 			}
-			return err
+			select {
+			case <-done:
+				return nil
+			default:
+			}
+			if delay == 0 {
+				delay = 5 * time.Millisecond
+			} else {
+				delay *= 2
+			}
+			if delay > time.Second {
+				delay = time.Second
+			}
+			log.Printf("TCP accept failed: %v", err)
+			time.Sleep(delay)
+			continue
+		}
+		delay = 0
+
+		host, ok := policy.Acquire(client.RemoteAddr())
+		if !ok {
+			if err := client.Close(); err != nil {
+				log.Printf("TCP client close failed: %v", err)
+			}
+			continue
 		}
 		select {
 		case connections <- struct{}{}:
 			go func() {
-				defer func() { <-connections }()
+				defer func() {
+					<-connections
+					policy.Release(host)
+				}()
 				proxyTCPConnection(client, target)
 			}()
 		default:
-			_ = client.Close()
+			policy.Release(host)
+			if err := client.Close(); err != nil {
+				log.Printf("TCP client close failed: %v", err)
+			}
 		}
 	}
 }
 
 func proxyTCPConnection(client net.Conn, target string) {
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.Printf("TCP client close failed: %v", err)
+		}
+	}()
 	upstream, err := net.DialTimeout("tcp", target, 10*time.Second)
 	if err != nil {
 		log.Printf("TCP upstream %q connection failed: %v", target, err)
 		return
 	}
-	defer upstream.Close()
+	defer func() {
+		if err := upstream.Close(); err != nil {
+			log.Printf("TCP upstream close failed: %v", err)
+		}
+	}()
 
 	_ = client.SetDeadline(time.Now().Add(tcpIdleTimeout))
 	_ = upstream.SetDeadline(time.Now().Add(tcpIdleTimeout))

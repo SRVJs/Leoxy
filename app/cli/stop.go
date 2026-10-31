@@ -31,7 +31,7 @@ var stopCmd = &cobra.Command{
 			return fmt.Errorf("invalid PID file")
 		}
 
-		if !platform.ProcessRunning(pid) {
+		if !platform.ProcessRunning(pid) || !platform.ProcessMatches(pid, "leoxy") {
 			_ = os.Remove(pidFile)
 			return fmt.Errorf("server is not running")
 		}

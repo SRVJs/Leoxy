@@ -3,39 +3,38 @@
 # =============== #
 FROM golang:1.27.3 AS builder
 
-WORKDIR /app
+WORKDIR /src
 
-COPY ./app/go.mod ./app/go.sum ./
+COPY app/go.mod app/go.sum ./app/
+RUN cd app && go mod download
 
-RUN go mod download
+COPY app ./app
+RUN cd app && CGO_ENABLED=0 GOOS=linux GOWORK=off go build -trimpath -ldflags="-s -w" -o /out/leoxy ./cli
 
-COPY . .
-
-RUN CGO_ENABLED=0 GOOS=linux go build \ 
-                              -trimpath \
-                              -ldflags="-s -w" \ 
-                              -o /out/leoxy ./app/cli
 
 # =================== #
 # Stage 2: Production #
 # =================== #
 FROM alpine:3.22
 
-RUN apk add --no-cache ca-certificates wget \
-               && addgroup -S leoxy \
-               && adduser -S -G leoxy leoxy \
-               && mkdir -p /app/leoxy \
-               && chown -R leoxy:leoxy /app/leoxy
+RUN addgroup -S leoxy \
+    && adduser -S -G leoxy -h /app leoxy \
+    && mkdir -p /app/leoxy \
+    && chown -R leoxy:leoxy /app
 
 WORKDIR /app
 
 COPY --from=builder /out/leoxy /usr/local/bin/leoxy
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+
+ENV LEOXY_HOST=0.0.0.0 \
+    LEOXY_LOG_DIR=/app/leoxy/log
 
 USER leoxy
 
 EXPOSE 4444
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-               CMD wget -q -O /dev/null http://127.0.0.1:4444/health/live || exit 1
+    CMD wget -q -O /dev/null http://127.0.0.1:${PORT:-4444}/health/live || exit 1
 
 ENTRYPOINT ["/usr/local/bin/leoxy"]

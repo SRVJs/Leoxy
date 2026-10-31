@@ -1,8 +1,11 @@
 package file
 
 import (
+	"errors"
 	"fmt"
+	"net"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/viper"
@@ -38,14 +41,21 @@ type Security struct {
 	AllowedMethods    []string `mapstructure:"allowed_methods"`
 	AllowedPaths      []string `mapstructure:"allowed_paths"`
 	MaxBody           int      `mapstructure:"max_body"`
+	MaxConnsPerIP     int      `mapstructure:"max_conns_per_ip"`
 	RedisAddr         string   `mapstructure:"redis_addr"`
 	RedisPassword     string   `mapstructure:"redis_password"`
 	RedisDB           int      `mapstructure:"redis_db"`
+	RedisFailOpen     bool     `mapstructure:"redis_fail_open"`
 	TrustedProxyCIDRs []string `mapstructure:"trusted_proxy_cidrs"`
+	InternalCIDRs     []string `mapstructure:"internal_cidrs"`
+	TLSCert           string   `mapstructure:"tls_cert"`
+	TLSKey            string   `mapstructure:"tls_key"`
+	ClientCA          string   `mapstructure:"client_ca"`
 }
 
 type ServerConfig struct {
 	Server struct {
+		Host     string   `mapstructure:"host"`
 		Port     string   `mapstructure:"port"`
 		Security Security `mapstructure:"security"`
 	} `mapstructure:"server"`
@@ -54,27 +64,36 @@ type ServerConfig struct {
 
 var Config *ServerConfig
 
+var ConfigPath = "leoxy/config.yaml"
+
+var reservedPaths = []string{"/ping", "/health", "/metrics", "/leoxy"}
+
 func Load() (*ServerConfig, error) {
-	viper.AddConfigPath("leoxy")
-	viper.SetConfigName("config")
+	viper.SetConfigFile(ConfigPath)
 	viper.SetConfigType("yaml")
 	viper.AutomaticEnv()
 	viper.SetEnvKeyReplacer(strings.NewReplacer(`.`, `_`))
-	err := viper.ReadInConfig()
-	if err != nil {
+	if err := viper.ReadInConfig(); err != nil {
 		return nil, fmt.Errorf("error loading config file: %s", err)
-	}
-	if value := os.Getenv("RATE_LIMIT"); value != "" {
-		viper.Set("server.security.rate_limit", value)
 	}
 
 	var cfg ServerConfig
-	err = viper.Unmarshal(&cfg)
-	if err != nil {
+	if err := viper.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("error reading config file: %s", err)
 	}
+
 	if value := os.Getenv("PORT"); value != "" {
 		cfg.Server.Port = value
+	}
+	if value := os.Getenv("LEOXY_HOST"); value != "" {
+		cfg.Server.Host = value
+	}
+	if value := os.Getenv("RATE_LIMIT"); value != "" {
+		limit, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil {
+			return nil, fmt.Errorf("RATE_LIMIT must be an integer: %w", err)
+		}
+		cfg.Server.Security.RateLimit = limit
 	}
 	if value := os.Getenv("JWT_SECRET"); value != "" {
 		cfg.Server.Security.JWTSecret = value
@@ -94,6 +113,126 @@ func Load() (*ServerConfig, error) {
 
 	Config = &cfg
 	return Config, nil
+}
+
+func NormalizePath(value string) string {
+	prefix := strings.TrimSpace(value)
+	if prefix == "" {
+		return "/"
+	}
+	if !strings.HasPrefix(prefix, "/") {
+		prefix = "/" + prefix
+	}
+	if prefix != "/" {
+		prefix = strings.TrimRight(prefix, "/")
+		if prefix == "" {
+			return "/"
+		}
+	}
+	return prefix
+}
+
+func Validate(cfg *ServerConfig) error {
+	var errs []error
+	server := cfg.Server.Security
+	errs = append(errs, validateSecurity("server.security", server)...)
+
+	needTLS := server.RequireMTLS
+	paths := map[string]string{}
+	listeners := map[string]string{}
+
+	for i, upstream := range cfg.Upstream {
+		name := upstream.Name
+		if name == "" {
+			name = fmt.Sprintf("#%d", i)
+		}
+		protocol := strings.ToLower(strings.TrimSpace(upstream.Protocol))
+		switch protocol {
+		case "tcp", "udp":
+			listen := strings.TrimSpace(upstream.Listen)
+			if listen == "" || strings.TrimSpace(upstream.ServerURL) == "" {
+				errs = append(errs, fmt.Errorf("upstream %q: %s requires listen and server_url", name, protocol))
+				continue
+			}
+			key := protocol + "|" + listen
+			if previous, ok := listeners[key]; ok {
+				errs = append(errs, fmt.Errorf("upstream %q: %s listener %s already used by %q", name, protocol, listen, previous))
+			}
+			listeners[key] = name
+			errs = append(errs, validateSecurity("upstream "+name, upstream.Security)...)
+		case "", "http", "https", "http2", "graphql", "websocket":
+			path := NormalizePath(upstream.Path)
+			if strings.ContainsAny(path, " \t\r\n{}") {
+				errs = append(errs, fmt.Errorf("upstream %q: path %q contains unsupported characters", name, path))
+			}
+			if isReserved(path) {
+				errs = append(errs, fmt.Errorf("upstream %q: path %q is reserved", name, path))
+			}
+			if previous, ok := paths[path]; ok {
+				errs = append(errs, fmt.Errorf("upstream %q: path %q already used by %q", name, path, previous))
+			}
+			paths[path] = name
+			if upstream.Security.RequireMTLS {
+				needTLS = true
+			}
+			errs = append(errs, validateSecurity("upstream "+name, upstream.Security)...)
+		default:
+			errs = append(errs, fmt.Errorf("upstream %q: unsupported protocol %q", name, upstream.Protocol))
+		}
+	}
+
+	if (server.TLSCert == "") != (server.TLSKey == "") {
+		errs = append(errs, errors.New("server.security: tls_cert and tls_key must be set together"))
+	}
+	if needTLS && (server.TLSCert == "" || server.TLSKey == "" || server.ClientCA == "") {
+		errs = append(errs, errors.New("require_mtls needs server.security tls_cert, tls_key and client_ca"))
+	}
+	return errors.Join(errs...)
+}
+
+func isReserved(path string) bool {
+	for _, reserved := range reservedPaths {
+		if path == reserved || strings.HasPrefix(path, reserved+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+func validateSecurity(scope string, security Security) []error {
+	var errs []error
+	numbers := map[string]int{
+		"rate_limit":        security.RateLimit,
+		"rate_limit_burst":  security.RateLimitBurst,
+		"global_rate_limit": security.GlobalRateLimit,
+		"global_rate_burst": security.GlobalRateBurst,
+		"route_rate_limit":  security.RouteRateLimit,
+		"route_rate_burst":  security.RouteRateBurst,
+		"max_body":          security.MaxBody,
+		"max_conns_per_ip":  security.MaxConnsPerIP,
+	}
+	for name, value := range numbers {
+		if value < 0 {
+			errs = append(errs, fmt.Errorf("%s: %s must not be negative", scope, name))
+		}
+	}
+	lists := map[string][]string{
+		"allow_cidrs":         security.AllowCIDRs,
+		"deny_cidrs":          security.DenyCIDRs,
+		"trusted_proxy_cidrs": security.TrustedProxyCIDRs,
+		"internal_cidrs":      security.InternalCIDRs,
+	}
+	for name, values := range lists {
+		for _, value := range values {
+			if _, _, err := net.ParseCIDR(strings.TrimSpace(value)); err != nil {
+				errs = append(errs, fmt.Errorf("%s: %s has invalid CIDR %q", scope, name, value))
+			}
+		}
+	}
+	if security.JWTSecret != "" && len(security.JWTSecret) < 32 {
+		errs = append(errs, fmt.Errorf("%s: jwt_secret must be at least 32 bytes", scope))
+	}
+	return errs
 }
 
 func splitSecrets(value string) []string {

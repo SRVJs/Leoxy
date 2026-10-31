@@ -1,6 +1,7 @@
 package shared
 
 import (
+	"crypto/tls"
 	"errors"
 	"net"
 	"net/http"
@@ -12,9 +13,10 @@ func IsClosedError(err error) bool {
 }
 
 var ProxyTransport = &http.Transport{
-	Proxy:                 http.ProxyFromEnvironment,
+	Proxy:                 nil,
 	DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
 	ForceAttemptHTTP2:     true,
+	TLSClientConfig:       &tls.Config{MinVersion: tls.VersionTLS12},
 	TLSHandshakeTimeout:   10 * time.Second,
 	ResponseHeaderTimeout: 15 * time.Second,
 	IdleConnTimeout:       90 * time.Second,

@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
   # Main Package
@@ -157,8 +158,11 @@ jobs:
       - name: Build
         run: go build ./...
 
+  golangci:
+    uses: ./.github/workflows/golangCI.yml
+
   docker:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: build
+    needs: [build, golangci]
     uses: ./.github/workflows/docker.yml
     secrets: inherit

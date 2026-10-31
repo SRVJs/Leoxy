@@ -1,0 +1,36 @@
+name: golangci
+
+permissions:
+     contents: read
+
+on:
+     workflow_call:
+     pull_request:
+     push:
+          branches:
+               - main
+
+jobs:
+     golangci:
+          permissions:
+               contents: read
+               pull-requests: read
+          name: lint
+          runs-on: ubuntu-latest
+          steps:
+               - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+               - name: Set up Go
+                 uses: actions/setup-go@v5
+                 with:
+                      go-version-file: app/go.mod
+                      cache: true
+                      cache-dependency-path: app/go.sum
+
+               - name: golangci-lint
+                 uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+                 with:
+                      working-directory: app
+                      version: latest
+                      only-new-issues: false
+                      args: --verbose

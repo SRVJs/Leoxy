@@ -6,12 +6,16 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 )
+
+const maxLogBytes int64 = 50 << 20
+const maxRequestIDLength = 64
 
 type statusWriter struct {
 	http.ResponseWriter
@@ -43,17 +47,69 @@ func (w *statusWriter) Flush() {
 	}
 }
 
+type logFile struct {
+	path string
+	file *os.File
+	size int64
+}
+
+func (l *logFile) open() bool {
+	file, err := os.OpenFile(l.path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		log.Printf("open log file %s: %v", l.path, err)
+		return false
+	}
+	l.size = 0
+	if info, err := file.Stat(); err == nil {
+		l.size = info.Size()
+	}
+	l.file = file
+	return true
+}
+
+func (l *logFile) write(message string) {
+	if l.file == nil && !l.open() {
+		return
+	}
+	if l.size >= maxLogBytes {
+		_ = l.file.Close()
+		l.file = nil
+		_ = os.Rename(l.path, l.path+".1")
+		if !l.open() {
+			return
+		}
+	}
+	n, err := l.file.WriteString(time.Now().Format("2006/01/02 15:04:05 ") + message + "\n")
+	l.size += int64(n)
+	if err != nil {
+		log.Printf("write log file %s: %v", l.path, err)
+	}
+}
+
 type requestLogger struct {
-	mutex sync.Mutex
+	mutex   sync.Mutex
+	request logFile
+	failed  logFile
 }
 
 var requestSequence uint64
 
 func RequestLogger(next http.Handler) http.Handler {
-	if err := os.MkdirAll("log", 0755); err != nil {
+	return RequestLoggerTrusted(next, nil)
+}
+
+func RequestLoggerTrusted(next http.Handler, trusted []*net.IPNet) http.Handler {
+	dir := os.Getenv("LEOXY_LOG_DIR")
+	if dir == "" {
+		dir = "log"
+	}
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		log.Fatal(err)
 	}
-	logger := &requestLogger{}
+	logger := &requestLogger{
+		request: logFile{path: filepath.Join(dir, "request.log")},
+		failed:  logFile{path: filepath.Join(dir, "error.log")},
+	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/node_modules") {
@@ -62,7 +118,7 @@ func RequestLogger(next http.Handler) http.Handler {
 		}
 
 		requestID := strings.TrimSpace(r.Header.Get("X-Request-ID"))
-		if requestID == "" {
+		if !validRequestID(requestID) {
 			requestID = newRequestID()
 		}
 		r.Header.Set("X-Request-ID", requestID)
@@ -76,16 +132,16 @@ func RequestLogger(next http.Handler) http.Handler {
 		if status == 0 {
 			status = http.StatusOK
 		}
-		entry := logEntry(r, status, time.Since(start))
+		entry := logEntry(r, status, time.Since(start), trusted)
 		logger.write(entry, status >= http.StatusBadRequest)
 	})
 }
 
-func logEntry(r *http.Request, status int, duration time.Duration) string {
+func logEntry(r *http.Request, status int, duration time.Duration, trusted []*net.IPNet) string {
 	entry := map[string]interface{}{
 		"method":      r.Method,
 		"path":        r.URL.Path,
-		"remote_ip":   remoteIP(r.RemoteAddr),
+		"remote_ip":   GetClientIP(r, trusted),
 		"status":      status,
 		"status_text": http.StatusText(status),
 		"duration_ms": duration.Milliseconds(),
@@ -103,30 +159,26 @@ func logEntry(r *http.Request, status int, duration time.Duration) string {
 func (logger *requestLogger) write(message string, isError bool) {
 	logger.mutex.Lock()
 	defer logger.mutex.Unlock()
-	writeLog("log/request.log", message)
-	if !isError {
-		return
+	logger.request.write(message)
+	if isError {
+		logger.failed.write(message)
 	}
-	writeLog("log/error.log", message)
 }
 
-func writeLog(path string, message string) {
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
-	if err != nil {
-		log.Printf("open log file %s: %v", path, err)
-		return
+func validRequestID(value string) bool {
+	if value == "" || len(value) > maxRequestIDLength {
+		return false
 	}
-	defer file.Close()
-	log.New(file, "", log.LstdFlags).Println(message)
+	for _, c := range value {
+		letter := (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+		digit := c >= '0' && c <= '9'
+		if !letter && !digit && c != '-' && c != '_' && c != '.' {
+			return false
+		}
+	}
+	return true
 }
 
 func newRequestID() string {
 	return strconv.FormatUint(atomic.AddUint64(&requestSequence, 1), 36)
-}
-
-func remoteIP(address string) string {
-	if host, _, err := net.SplitHostPort(address); err == nil {
-		return host
-	}
-	return address
 }
