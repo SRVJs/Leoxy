@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "v1.9.0"
+const version = "v1.10.1"
 
 var configFile, dataDir string
 
