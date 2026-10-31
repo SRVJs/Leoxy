@@ -23,7 +23,7 @@ upstream:
     server_url: "http://localhost:3000"
 `
 
-func CreateConfig() error {
+func CreateConfig() (err error) {
 	dir := filepath.Dir(ConfigPath)
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
@@ -41,7 +41,11 @@ func CreateConfig() error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if closeErr := file.Close(); err == nil {
+			err = closeErr
+		}
+	}()
 	_, err = file.WriteString(defaultConfig)
 	return err
 }

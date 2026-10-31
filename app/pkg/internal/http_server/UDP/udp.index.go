@@ -26,7 +26,11 @@ type sessionTable struct {
 }
 
 func RunUDPProxy(conn *net.UDPConn, target string, policy *shared.StreamPolicy, done <-chan struct{}) error {
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil && !shared.IsClosedError(err) {
+			log.Printf("UDP listener close failed: %v", err)
+		}
+	}()
 	upstreamAddr, err := net.ResolveUDPAddr("udp", target)
 	if err != nil {
 		return err
@@ -154,7 +158,11 @@ func (t *sessionTable) sweep(done <-chan struct{}) {
 
 func (t *sessionTable) relay(listener *net.UDPConn, key string, session *udpSession) {
 	defer t.remove(key, session)
-	defer session.connection.Close()
+	defer func() {
+		if err := session.connection.Close(); err != nil && !shared.IsClosedError(err) {
+			log.Printf("UDP upstream close failed: %v", err)
+		}
+	}()
 	buffer := make([]byte, 65535)
 	for {
 		n, err := session.connection.Read(buffer)

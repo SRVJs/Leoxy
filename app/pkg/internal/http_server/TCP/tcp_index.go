@@ -13,7 +13,11 @@ const maxTCPConnections = 1024
 const tcpIdleTimeout = 5 * time.Minute
 
 func RunTCPProxy(listener net.Listener, target string, policy *shared.StreamPolicy, done <-chan struct{}) error {
-	defer listener.Close()
+	defer func() {
+		if err := listener.Close(); err != nil && !shared.IsClosedError(err) {
+			log.Printf("TCP listener close failed: %v", err)
+		}
+	}()
 	connections := make(chan struct{}, maxTCPConnections)
 	go func() {
 		<-done
@@ -48,7 +52,9 @@ func RunTCPProxy(listener net.Listener, target string, policy *shared.StreamPoli
 
 		host, ok := policy.Acquire(client.RemoteAddr())
 		if !ok {
-			_ = client.Close()
+			if err := client.Close(); err != nil {
+				log.Printf("TCP client close failed: %v", err)
+			}
 			continue
 		}
 		select {
@@ -62,19 +68,29 @@ func RunTCPProxy(listener net.Listener, target string, policy *shared.StreamPoli
 			}()
 		default:
 			policy.Release(host)
-			_ = client.Close()
+			if err := client.Close(); err != nil {
+				log.Printf("TCP client close failed: %v", err)
+			}
 		}
 	}
 }
 
 func proxyTCPConnection(client net.Conn, target string) {
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			log.Printf("TCP client close failed: %v", err)
+		}
+	}()
 	upstream, err := net.DialTimeout("tcp", target, 10*time.Second)
 	if err != nil {
 		log.Printf("TCP upstream %q connection failed: %v", target, err)
 		return
 	}
-	defer upstream.Close()
+	defer func() {
+		if err := upstream.Close(); err != nil {
+			log.Printf("TCP upstream close failed: %v", err)
+		}
+	}()
 
 	_ = client.SetDeadline(time.Now().Add(tcpIdleTimeout))
 	_ = upstream.SetDeadline(time.Now().Add(tcpIdleTimeout))

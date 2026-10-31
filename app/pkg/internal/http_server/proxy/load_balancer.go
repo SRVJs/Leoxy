@@ -78,24 +78,25 @@ func NewLoadBalancedProxy(targets []*url.URL, forwardIP bool, trustedProxyCIDRs 
 		trusted = trustedProxyCIDRs[0]
 	}
 	health := newTargetHealth()
-	proxy := httputil.NewSingleHostReverseProxy(targets[0])
-	proxy.Transport = loadBalancedTransport{targets: targets, base: shared.ProxyTransport, health: health}
-	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		if errors.Is(err, context.Canceled) {
-			return
-		}
-		log.Printf("upstream request failed: %v", err)
-		var netErr net.Error
-		if errors.As(err, &netErr) && netErr.Timeout() {
-			http.Error(w, "gateway timeout", http.StatusGatewayTimeout)
-			return
-		}
-		http.Error(w, "bad gateway", http.StatusBadGateway)
+	proxy := &httputil.ReverseProxy{
+		Transport: loadBalancedTransport{targets: targets, base: shared.ProxyTransport, health: health},
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			if errors.Is(err, context.Canceled) {
+				return
+			}
+			log.Printf("upstream request failed: %v", err)
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				http.Error(w, "gateway timeout", http.StatusGatewayTimeout)
+				return
+			}
+			http.Error(w, "bad gateway", http.StatusBadGateway)
+		},
 	}
 
-	originalDirector := proxy.Director
 	var next uint64
-	proxy.Director = func(r *http.Request) {
+	proxy.Rewrite = func(pr *httputil.ProxyRequest) {
+		r := pr.In
 		target := pickTarget(targets, &next, health)
 		clientIP := r.RemoteAddr
 		if len(trusted) > 0 {
@@ -111,18 +112,15 @@ func NewLoadBalancedProxy(targets []*url.URL, forwardIP bool, trustedProxyCIDRs 
 			}
 		}
 		originalHost := r.Host
-		originalDirector(r)
-		r.URL.Scheme = target.Scheme
-		r.URL.Host = target.Host
-		r.Host = target.Host
-		r.Header.Del("CF-Connecting-IP")
-		r.Header.Del("X-Real-IP")
-		r.Header.Del("X-API-Key")
-		r.Header.Set("X-Forwarded-For", clientIP)
-		r.Header.Set("X-Forwarded-Proto", proto)
-		r.Header.Set("X-Forwarded-Host", originalHost)
+		pr.SetURL(target)
+		pr.Out.Header.Del("CF-Connecting-IP")
+		pr.Out.Header.Del("X-Real-IP")
+		pr.Out.Header.Del("X-API-Key")
+		pr.Out.Header.Set("X-Forwarded-For", clientIP)
+		pr.Out.Header.Set("X-Forwarded-Proto", proto)
+		pr.Out.Header.Set("X-Forwarded-Host", originalHost)
 		if forwardIP {
-			r.Header.Set("X-Real-IP", clientIP)
+			pr.Out.Header.Set("X-Real-IP", clientIP)
 		}
 	}
 	return proxy

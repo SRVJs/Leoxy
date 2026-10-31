@@ -58,7 +58,11 @@ var startCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		defer logFile.Close()
+		defer func() {
+			if err := logFile.Close(); err != nil {
+				fmt.Fprintf(os.Stderr, "close log file: %v\n", err)
+			}
+		}()
 
 		process.Stdout = logFile
 		process.Stderr = logFile
